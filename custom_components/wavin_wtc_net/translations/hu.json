@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Csatlakozás a WTC-NET-hez",
-        "description": "Add meg a gateway Modbus TCP végpontját és a mögötte lévő vezérlőket <egység azonosító>:<zónák száma> formában, pl. 1:6, 2:4. Csak olvasási kérések mennek ki.",
+        "description": "Add meg a gateway Modbus TCP végpontját és a mögötte lévő vezérlőket EGYSÉG:ZÓNÁK formában, pl. 1:6, 2:4. Csak olvasási kérések mennek ki.",
         "data": {
           "name": "Név",
           "host": "Gép",
@@ -24,7 +24,7 @@
     },
     "error": {
       "cannot_connect": "Nem olvasható a gateway, vagy egy vezérlő nem válaszol.",
-      "invalid_units": "Használd az <egység azonosító>:<zónák> alakot, pl. 1:6, 2:4 (egység 1-247, zónák 1-7).",
+      "invalid_units": "Használd az EGYSÉG:ZÓNÁK alakot, pl. 1:6, 2:4 (egység 1-247, zónák 1-7).",
       "unknown": "Váratlan hiba."
     },
     "abort": {

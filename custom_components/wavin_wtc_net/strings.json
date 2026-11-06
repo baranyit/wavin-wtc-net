@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to WTC-NET",
-        "description": "Enter the Modbus TCP endpoint of the gateway and the controllers behind it as <unit id>:<number of zones>, e.g. 1:6, 2:4. Only read requests are sent.",
+        "description": "Enter the Modbus TCP endpoint of the gateway and the controllers behind it as UNIT:ZONES, e.g. 1:6, 2:4. Only read requests are sent.",
         "data": {
           "name": "Name",
           "host": "Host",
@@ -24,7 +24,7 @@
     },
     "error": {
       "cannot_connect": "Cannot read from the gateway or a controller does not answer.",
-      "invalid_units": "Use the form <unit id>:<zones>, e.g. 1:6, 2:4 (unit 1-247, zones 1-7).",
+      "invalid_units": "Use the form UNIT:ZONES, e.g. 1:6, 2:4 (unit 1-247, zones 1-7).",
       "unknown": "Unexpected error."
     },
     "abort": {
