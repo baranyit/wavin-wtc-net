@@ -147,7 +147,7 @@ async def test_read_only_validation_report() -> None:
         "snapshots": snapshots,
     }
     path = await asyncio.to_thread(_write_report, report)
-    print(f"\nreport: {path}")  # noqa: T201
+    print(f"\nreport: {path}")
 
     # Read-only by construction; this only guards the contract (rate, caps are in the transport).
     assert stats.requests_started <= client.first_cycle_requests + cycles * (
