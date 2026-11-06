@@ -146,11 +146,8 @@ async def test_read_only_validation_report() -> None:
         "register_polarity_note": "see docs/open-decisions.md decision 5",
         "snapshots": snapshots,
     }
-    out_dir = Path(os.environ.get("WTC_REPORT_DIR", Path(__file__).parent / "reports"))
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"read-validation-{time.strftime('%Y%m%d-%H%M%S')}.json"
-    path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
-    print(f"\nreport: {path}")
+    path = await asyncio.to_thread(_write_report, report)
+    print(f"\nreport: {path}")  # noqa: T201
 
     # Read-only by construction; this only guards the contract (rate, caps are in the transport).
     assert stats.requests_started <= client.first_cycle_requests + cycles * (
