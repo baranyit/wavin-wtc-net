@@ -1,0 +1,253 @@
+"""Home Assistant layer: flows, setup, entities, availability, diagnostics, translations."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from unittest.mock import patch
+
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.components.diagnostics import (
+    get_diagnostics_for_config_entry,
+)
+
+from custom_components.wavin_wtc_net.const import (
+    CONF_GATEWAY_ID,
+    CONF_MAX_GAP,
+    CONF_POLL_INTERVAL,
+    DOMAIN,
+)
+from custom_components.wavin_wtc_net.errors import WtcConnectionError
+from custom_components.wavin_wtc_net.protocol import Table
+
+from ..mock_wtc import Fault, MockWtcBackend
+from .conftest import GATEWAY_ID, HOST
+
+PACKAGE = Path(__file__).resolve().parents[2] / "custom_components" / "wavin_wtc_net"
+
+
+async def _setup(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+# -- setup and entities ---------------------------------------------------------------------
+
+
+async def test_setup_creates_ten_climate_devices_without_writes(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    await _setup(hass, mock_entry)
+    assert mock_entry.state is ConfigEntryState.LOADED
+    assert len(hass.states.async_entity_ids("climate")) == 10
+    assert mock_device.writes == []
+    assert len(mock_device.records) == 29  # first cycle includes the static points
+    assert {r.op for r in mock_device.records} <= {"read_holding_registers", "read_coils"}
+
+
+async def test_identity_is_gateway_id_based_not_entry_id(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    await _setup(hass, mock_entry)
+    ent_reg = er.async_get(hass)
+    entries = er.async_entries_for_config_entry(ent_reg, mock_entry.entry_id)
+    assert entries
+    for entity in entries:
+        assert entity.unique_id.startswith(f"{GATEWAY_ID}_u")
+        assert mock_entry.entry_id not in entity.unique_id
+    dev_reg = dr.async_get(hass)
+    zone_device = dev_reg.async_get_device(identifiers={(DOMAIN, f"{GATEWAY_ID}_u2_z4")})
+    controller = dev_reg.async_get_device(identifiers={(DOMAIN, f"{GATEWAY_ID}_u2")})
+    assert zone_device is not None and controller is not None
+    assert zone_device.via_device_id == controller.id
+
+
+async def test_zone_state_comes_from_the_snapshot(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    await _setup(hass, mock_entry)
+    ent_reg = er.async_get(hass)
+    entity_id = ent_reg.async_get_entity_id("climate", DOMAIN, f"{GATEWAY_ID}_u2_z3_climate")
+    assert entity_id is not None
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.state == "heat"
+    assert state.attributes["current_temperature"] == 21.7
+    assert state.attributes["hvac_action"] == "heating"
+    assert "temperature" not in state.attributes or state.attributes["temperature"] is None
+
+
+async def test_partial_unit_failure_marks_only_that_unit_unavailable(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    mock_device.faults.append(
+        Fault("exception", unit_id=2, table=Table.HOLDING_REGISTER, address=4121, remaining=99)
+    )
+    await _setup(hass, mock_entry)
+    assert mock_entry.state is ConfigEntryState.LOADED
+    ent_reg = er.async_get(hass)
+    ok = ent_reg.async_get_entity_id("climate", DOMAIN, f"{GATEWAY_ID}_u1_z1_climate")
+    bad = ent_reg.async_get_entity_id("climate", DOMAIN, f"{GATEWAY_ID}_u2_z1_climate")
+    assert ok and bad
+    assert hass.states.get(ok).state != "unavailable"  # type: ignore[union-attr]
+    assert hass.states.get(bad).state == "unavailable"  # type: ignore[union-attr]
+    assert mock_device.writes == []
+
+
+async def test_all_units_down_retries_setup(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    mock_device.offline_units = {1, 2}
+    mock_entry.add_to_hass(hass)
+    assert not await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done()
+    assert mock_entry.state is ConfigEntryState.SETUP_RETRY
+
+
+async def test_unload_makes_no_writes(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    await _setup(hass, mock_entry)
+    assert await hass.config_entries.async_unload(mock_entry.entry_id)
+    await hass.async_block_till_done()
+    assert mock_entry.state is ConfigEntryState.NOT_LOADED
+    assert mock_device.writes == []
+
+
+# -- config flow ----------------------------------------------------------------------------
+
+
+async def test_user_flow_creates_entry_with_generated_gateway_id(
+    hass: HomeAssistant, mock_device: MockWtcBackend
+) -> None:
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    assert result["type"] is FlowResultType.FORM
+    with patch("custom_components.wavin_wtc_net.config_flow.probe_endpoint") as probe:
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {"name": "Home", "host": HOST, "port": 502, "units": "1:6, 2:4"},
+        )
+        await hass.async_block_till_done()
+    probe.assert_awaited_once_with(HOST, 502, [1, 2])
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["units"] == {"1": 6, "2": 4}
+    assert len(result["data"][CONF_GATEWAY_ID]) == 32
+    assert result["options"] == {CONF_POLL_INTERVAL: 60, CONF_MAX_GAP: 8}
+
+
+async def test_user_flow_rejects_bad_units_and_unreachable_endpoint(
+    hass: HomeAssistant, mock_device: MockWtcBackend
+) -> None:
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    bad = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"name": "Home", "host": HOST, "port": 502, "units": "1-6"}
+    )
+    assert bad["type"] is FlowResultType.FORM and bad["errors"] == {"base": "invalid_units"}
+    with patch(
+        "custom_components.wavin_wtc_net.config_flow.probe_endpoint",
+        side_effect=WtcConnectionError("nope"),
+    ):
+        down = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"name": "Home", "host": HOST, "port": 502, "units": "1:6"}
+        )
+    assert down["type"] is FlowResultType.FORM and down["errors"] == {"base": "cannot_connect"}
+
+
+async def test_duplicate_endpoint_is_aborted(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    mock_entry.add_to_hass(hass)
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"name": "Other", "host": HOST, "port": 502, "units": "1:2"}
+    )
+    assert result["type"] is FlowResultType.ABORT and result["reason"] == "already_configured"
+
+
+async def test_reconfigure_keeps_gateway_identity(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    mock_entry.add_to_hass(hass)
+    result = await mock_entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    with (
+        patch("custom_components.wavin_wtc_net.config_flow.probe_endpoint"),
+        patch("custom_components.wavin_wtc_net.async_setup_entry", return_value=True),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {"name": "Home", "host": "192.0.2.11", "port": 502, "units": "1:6, 2:4"},
+        )
+        await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.ABORT and result["reason"] == "reconfigure_successful"
+    assert mock_entry.data["host"] == "192.0.2.11"
+    assert mock_entry.data[CONF_GATEWAY_ID] == GATEWAY_ID
+
+
+# -- options flow ---------------------------------------------------------------------------
+
+
+async def test_options_reject_interval_below_derived_minimum(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    await _setup(hass, mock_entry)
+    result = await hass.config_entries.options.async_init(mock_entry.entry_id)
+    assert result["description_placeholders"] == {"minimum": "44"}
+    low = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_POLL_INTERVAL: 30, CONF_MAX_GAP: 8}
+    )
+    assert low["type"] is FlowResultType.FORM
+    assert low["errors"] == {CONF_POLL_INTERVAL: "interval_too_low"}
+    ok = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_POLL_INTERVAL: 90, CONF_MAX_GAP: 8}
+    )
+    assert ok["type"] is FlowResultType.CREATE_ENTRY
+    assert mock_entry.options[CONF_POLL_INTERVAL] == 90
+
+
+async def test_gap_zero_raises_the_minimum_interval(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    await _setup(hass, mock_entry)
+    result = await hass.config_entries.options.async_init(mock_entry.entry_id)
+    low = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_POLL_INTERVAL: 60, CONF_MAX_GAP: 0}
+    )
+    assert low["errors"] == {CONF_POLL_INTERVAL: "interval_too_low"}  # 41 requests -> 62 s
+
+
+# -- diagnostics and translations -----------------------------------------------------------
+
+
+async def test_diagnostics_are_redacted_and_carry_the_raw_image(
+    hass: HomeAssistant,
+    hass_client: object,
+    mock_device: MockWtcBackend,
+    mock_entry: MockConfigEntry,
+) -> None:
+    await _setup(hass, mock_entry)
+    data = await get_diagnostics_for_config_entry(hass, hass_client, mock_entry)  # type: ignore[arg-type]
+    text = json.dumps(data)
+    assert HOST not in text and GATEWAY_ID not in text
+    assert data["first_cycle_requests"] == 29 and data["minimum_poll_interval_s"] == 44.0
+    assert data["units"][0]["raw_registers"] and data["units"][0]["raw_coils"]
+
+
+def _keys(node: object, prefix: str = "") -> set[str]:
+    if isinstance(node, dict):
+        return {k for key, v in node.items() for k in _keys(v, f"{prefix}{key}.")}
+    return {prefix}
+
+
+def test_every_english_string_has_a_hungarian_translation() -> None:
+    strings = json.loads((PACKAGE / "strings.json").read_text(encoding="utf-8"))
+    english = json.loads((PACKAGE / "translations" / "en.json").read_text(encoding="utf-8"))
+    hungarian = json.loads((PACKAGE / "translations" / "hu.json").read_text(encoding="utf-8"))
+    assert strings == english
+    assert _keys(english) == _keys(hungarian)

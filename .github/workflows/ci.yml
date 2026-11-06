@@ -25,7 +25,7 @@ jobs:
       - name: Install
         run: |
           uv venv
-          uv pip install -e ".[dev]"
+          uv pip install -e ".[dev]" -C editable_mode=compat
       - name: ruff check
         run: uv run --no-sync ruff check .
       - name: ruff format
@@ -50,12 +50,30 @@ jobs:
         run: |
           uv venv
           if [ "${{ matrix.pymodbus }}" = "latest" ]; then
-            uv pip install -e ".[test]"
+            uv pip install -e ".[test]" -C editable_mode=compat
           else
-            uv pip install -e ".[test]" "pymodbus==${{ matrix.pymodbus }}"
+            uv pip install -e ".[test]" -C editable_mode=compat "pymodbus==${{ matrix.pymodbus }}"
           fi
           uv pip show pymodbus | grep -i '^version'
       - name: pytest
         # Includes test_pymodbus_integration.py: real pymodbus client against a
         # pymodbus TCP server on 127.0.0.1. CI never reaches real hardware.
         run: uv run --no-sync python -m pytest
+
+  hassfest:
+    name: hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS validation
+    # The HACS action refuses private repositories; it runs once the repository is public.
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration

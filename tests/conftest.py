@@ -1,23 +1,15 @@
 """Test configuration.
 
-``async def`` tests run on a fresh event loop via ``asyncio.run`` so the suite has
-no dependency on pytest-asyncio.
+``async def`` tests run under pytest-asyncio in auto mode (pulled in by
+``pytest-homeassistant-custom-component``). The core tests stay free of Home Assistant imports;
+only ``tests/ha`` uses the ``hass`` fixtures.
 """
 
 from __future__ import annotations
 
-import asyncio
-import inspect
-from typing import Any
-
 import pytest
 
 
-@pytest.hookimpl(tryfirst=True)
-def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
-    if inspect.iscoroutinefunction(pyfuncitem.obj):
-        names = pyfuncitem._fixtureinfo.argnames
-        kwargs: dict[str, Any] = {name: pyfuncitem.funcargs[name] for name in names}
-        asyncio.run(pyfuncitem.obj(**kwargs))
-        return True
-    return None
+@pytest.fixture(autouse=True)
+def _enable_custom_integrations_marker() -> None:
+    """Placeholder so fixtures defined here are discoverable; HA tests enable integrations."""

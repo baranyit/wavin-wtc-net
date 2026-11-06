@@ -1,0 +1,164 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to WTC-NET",
+        "description": "Enter the Modbus TCP endpoint of the gateway and the controllers behind it as UNIT:ZONES, e.g. 1:6, 2:4. Only read requests are sent.",
+        "data": {
+          "name": "Name",
+          "host": "Host",
+          "port": "Port",
+          "units": "Controllers (unit:zones)"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure WTC-NET",
+        "description": "Change the endpoint or the controllers. Only read requests are sent.",
+        "data": {
+          "name": "Name",
+          "host": "Host",
+          "port": "Port",
+          "units": "Controllers (unit:zones)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot read from the gateway or a controller does not answer.",
+      "invalid_units": "Use the form UNIT:ZONES, e.g. 1:6, 2:4 (unit 1-247, zones 1-7).",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This endpoint is already configured.",
+      "reconfigure_successful": "Reconfiguration successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Polling",
+        "description": "The minimum poll interval for this setup is {minimum} s. Changing the maximum gap is an advanced setting: it only changes how unused addresses are bridged, never what is written (nothing is).",
+        "data": {
+          "poll_interval": "Poll interval (s)",
+          "max_gap": "Maximum address gap bridged per read (0-8)"
+        }
+      }
+    },
+    "error": {
+      "interval_too_low": "The poll interval is below the minimum for this setup."
+    }
+  },
+  "issues": {
+    "excluded_points": {
+      "title": "Some WTC-NET values are not read",
+      "description": "Controller unit {unit} rejected reads of: {points}. They are skipped until the next reconnect. This is harmless, but please report it with a diagnostics download."
+    }
+  },
+  "entity": {
+    "climate": {
+      "zone": {
+        "name": "Thermostat"
+      }
+    },
+    "sensor": {
+      "water_temperature": {
+        "name": "Water temperature"
+      },
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "init": "Initializing",
+          "heat": "Heating",
+          "cool": "Cooling",
+          "changeover": "Changeover"
+        }
+      },
+      "pi_output": {
+        "name": "PI regulator output"
+      },
+      "controller_temperature": {
+        "name": "Sensor temperature"
+      },
+      "controller_humidity": {
+        "name": "Sensor humidity"
+      },
+      "controller_dew_point": {
+        "name": "Sensor dew point"
+      },
+      "program_code": {
+        "name": "Program switch"
+      },
+      "firmware": {
+        "name": "Firmware version"
+      },
+      "serial": {
+        "name": "Serial number"
+      },
+      "zone_temperature": {
+        "name": "Temperature"
+      },
+      "zone_humidity": {
+        "name": "Humidity"
+      },
+      "zone_dew_point": {
+        "name": "Dew point"
+      },
+      "preset": {
+        "name": "Preset",
+        "state": {
+          "comfort": "Comfort",
+          "economy": "Economy"
+        }
+      },
+      "wheel_offset": {
+        "name": "Wheel offset"
+      },
+      "wheel_code": {
+        "name": "Wheel code"
+      },
+      "comfort_cool_setpoint": {
+        "name": "Comfort cooling setpoint"
+      },
+      "comfort_heat_setpoint": {
+        "name": "Comfort heating setpoint"
+      },
+      "economy_heat_setpoint": {
+        "name": "Economy heating setpoint"
+      },
+      "economy_cool_setpoint": {
+        "name": "Economy cooling setpoint"
+      }
+    },
+    "binary_sensor": {
+      "heating_output": {
+        "name": "Heating output"
+      },
+      "cooling_output": {
+        "name": "Cooling output"
+      },
+      "emergency_water_temperature": {
+        "name": "Emergency stop (water too hot)"
+      },
+      "water_sensor_fault": {
+        "name": "Water temperature sensor fault"
+      },
+      "valve_open": {
+        "name": "Valve open"
+      },
+      "condensation": {
+        "name": "Condensation"
+      },
+      "dry": {
+        "name": "Drying demand"
+      },
+      "live": {
+        "name": "Thermostat connected"
+      },
+      "locked": {
+        "name": "Locked"
+      },
+      "dew_point_input": {
+        "name": "Dew point input"
+      }
+    }
+  }
+}

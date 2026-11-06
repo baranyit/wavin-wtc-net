@@ -1,0 +1,164 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Csatlakozás a WTC-NET-hez",
+        "description": "Add meg a gateway Modbus TCP végpontját és a mögötte lévő vezérlőket EGYSÉG:ZÓNÁK formában, pl. 1:6, 2:4. Csak olvasási kérések mennek ki.",
+        "data": {
+          "name": "Név",
+          "host": "Gép",
+          "port": "Port",
+          "units": "Vezérlők (egység:zónák)"
+        }
+      },
+      "reconfigure": {
+        "title": "WTC-NET újrakonfigurálása",
+        "description": "A végpont vagy a vezérlők módosítása. Csak olvasási kérések mennek ki.",
+        "data": {
+          "name": "Név",
+          "host": "Gép",
+          "port": "Port",
+          "units": "Vezérlők (egység:zónák)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nem olvasható a gateway, vagy egy vezérlő nem válaszol.",
+      "invalid_units": "Használd az EGYSÉG:ZÓNÁK alakot, pl. 1:6, 2:4 (egység 1-247, zónák 1-7).",
+      "unknown": "Váratlan hiba."
+    },
+    "abort": {
+      "already_configured": "Ez a végpont már be van állítva.",
+      "reconfigure_successful": "Az újrakonfigurálás sikeres."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Lekérdezés",
+        "description": "Ennek a beállításnak a minimális lekérdezési ideje {minimum} mp. A legnagyobb áthidalt cím-rés módosítása haladó beállítás: csak azt változtatja, hogyan hidalja át a használaton kívüli címeket, írni sosem ír (egyáltalán nincs írás).",
+        "data": {
+          "poll_interval": "Lekérdezési idő (mp)",
+          "max_gap": "Olvasásonként áthidalt legnagyobb címrés (0-8)"
+        }
+      }
+    },
+    "error": {
+      "interval_too_low": "A lekérdezési idő kisebb, mint ennek a beállításnak a minimuma."
+    }
+  },
+  "issues": {
+    "excluded_points": {
+      "title": "A WTC-NET néhány értéke nem olvasható",
+      "description": "A(z) {unit}. egységű vezérlő elutasította ezek olvasását: {points}. A következő újracsatlakozásig kihagyjuk őket. Ez ártalmatlan, de kérlek jelezd diagnosztikai letöltéssel."
+    }
+  },
+  "entity": {
+    "climate": {
+      "zone": {
+        "name": "Termosztát"
+      }
+    },
+    "sensor": {
+      "water_temperature": {
+        "name": "Vízhőmérséklet"
+      },
+      "mode": {
+        "name": "Üzemmód",
+        "state": {
+          "init": "Inicializálás",
+          "heat": "Fűtés",
+          "cool": "Hűtés",
+          "changeover": "Átváltás"
+        }
+      },
+      "pi_output": {
+        "name": "PI szabályozó kimenet"
+      },
+      "controller_temperature": {
+        "name": "Érzékelő hőmérséklet"
+      },
+      "controller_humidity": {
+        "name": "Érzékelő páratartalom"
+      },
+      "controller_dew_point": {
+        "name": "Érzékelő harmatpont"
+      },
+      "program_code": {
+        "name": "Programkapcsoló"
+      },
+      "firmware": {
+        "name": "Firmware verzió"
+      },
+      "serial": {
+        "name": "Sorozatszám"
+      },
+      "zone_temperature": {
+        "name": "Hőmérséklet"
+      },
+      "zone_humidity": {
+        "name": "Páratartalom"
+      },
+      "zone_dew_point": {
+        "name": "Harmatpont"
+      },
+      "preset": {
+        "name": "Előbeállítás",
+        "state": {
+          "comfort": "Komfort",
+          "economy": "Takarék"
+        }
+      },
+      "wheel_offset": {
+        "name": "Tekerő eltérés"
+      },
+      "wheel_code": {
+        "name": "Tekerő kód"
+      },
+      "comfort_cool_setpoint": {
+        "name": "Komfort hűtési alapjel"
+      },
+      "comfort_heat_setpoint": {
+        "name": "Komfort fűtési alapjel"
+      },
+      "economy_heat_setpoint": {
+        "name": "Takarék fűtési alapjel"
+      },
+      "economy_cool_setpoint": {
+        "name": "Takarék hűtési alapjel"
+      }
+    },
+    "binary_sensor": {
+      "heating_output": {
+        "name": "Fűtés kimenet"
+      },
+      "cooling_output": {
+        "name": "Hűtés kimenet"
+      },
+      "emergency_water_temperature": {
+        "name": "Vészleállítás (túl meleg víz)"
+      },
+      "water_sensor_fault": {
+        "name": "Vízhőmérséklet-érzékelő hiba"
+      },
+      "valve_open": {
+        "name": "Szelep nyitva"
+      },
+      "condensation": {
+        "name": "Páralecsapódás"
+      },
+      "dry": {
+        "name": "Szárítási igény"
+      },
+      "live": {
+        "name": "Termosztát csatlakozva"
+      },
+      "locked": {
+        "name": "Zárolva"
+      },
+      "dew_point_input": {
+        "name": "Harmatpont bemenet"
+      }
+    }
+  }
+}
