@@ -19,6 +19,8 @@ unless a user explicitly asked for it**.
 - **Done – open decision 1:** real-pymodbus integration tests against a localhost server
   (`tests/test_pymodbus_integration.py`) and GitHub Actions CI (`.github/workflows/ci.yml`,
   pymodbus 3.8.x + latest).
+- **Done – decisions 2-4 in code:** static points on a slow cadence, derived minimum poll
+  interval, `max_gap` 0..8, fallback split with per-connection exclusions (`docs/to-code.md`).
 - Not yet done: hassfest/HACS, plan step 1 evidence freeze, plan step 4 hardware validation.
 - **Open decisions first:** work through `docs/open-decisions.md` with the maintainer, item by item,
   before starting plan step 3. Each item needs a maintainer decision or action.

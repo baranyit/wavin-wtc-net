@@ -214,3 +214,16 @@ def test_decode_with_missing_values_yields_none() -> None:
     assert controller.mode is None and controller.firmware is None
     zone = p.decode_zone(image, 3)
     assert zone.temperature is None and zone.live is None
+
+
+def test_blocked_address_is_never_bridged() -> None:
+    pts = [
+        p.Point(p.Table.COIL, 10, "a", p.Confidence.BOTH),
+        p.Point(p.Table.COIL, 14, "b", p.Confidence.BOTH),
+    ]
+    caps = {"max_registers": 15, "max_coils": 16}
+    assert len(p.plan_reads(pts, max_gap=8, **caps)) == 1
+    plan = p.plan_reads(pts, max_gap=8, blocked=[(p.Table.COIL, 12)], **caps)
+    assert [(r.address, r.count) for r in plan] == [(10, 1), (14, 1)]
+    other = [(p.Table.HOLDING_REGISTER, 12)]
+    assert len(p.plan_reads(pts, max_gap=8, blocked=other, **caps)) == 1

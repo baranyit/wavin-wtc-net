@@ -51,7 +51,10 @@ async def test_24h_clean_polling_makes_zero_writes() -> None:
     await poller.run(max_cycles=DAY // 60)
     assert clock.now - start <= DAY
     assert poller.completed_cycles == 1440 and poller.skipped_cycles == 0
-    assert len(backend.records) == 1440 * client.requests_per_cycle
+    assert client.requests_per_cycle == 27 and client.first_cycle_requests == 29
+    static = [r for r in backend.records if r.address == 4500]
+    assert len(static) == 2 * 24  # both units: first cycle, then roughly hourly
+    assert len(backend.records) == 1440 * client.requests_per_cycle + len(static)
     assert all(unit.available for snap in snapshots for unit in snap.units)
     assert backend.connect_attempts == 1
     assert_wire_invariants(backend)
@@ -116,5 +119,5 @@ async def test_concurrent_manual_cycle_is_skipped() -> None:
     results = await asyncio.gather(poller.run_cycle(), poller.run_cycle())
     assert sum(r is None for r in results) == 1
     assert poller.skipped_cycles == 1
-    assert len(backend.records) == client.requests_per_cycle
+    assert len(backend.records) == client.first_cycle_requests
     assert_wire_invariants(backend)

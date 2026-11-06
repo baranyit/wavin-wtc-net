@@ -100,6 +100,8 @@ class UnitSnapshot:
     failed_optional_reads: tuple[str, ...]
     raw: RawImage | None
     read_at: float
+    #: Optional points currently skipped on this connection after a failed read.
+    excluded_points: tuple[str, ...] = ()
 
     def zone(self, zone: int) -> ZoneSnapshot | None:
         for item in self.zones:

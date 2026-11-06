@@ -137,6 +137,12 @@ class GatewayTransport:
         self._failures = 0
         self._last_success: float | None = None
         self._last_latency: float | None = None
+        self._connection_generation = 0
+
+    @property
+    def connection_generation(self) -> int:
+        """Incremented on every successful (re)connect."""
+        return self._connection_generation
 
     @property
     def settings(self) -> TransportSettings:
@@ -260,6 +266,7 @@ class GatewayTransport:
         if not self._backend.connected:
             await self._connection_failed()
             raise WtcConnectionError("connect failed: backend reports not connected")
+        self._connection_generation += 1
 
     async def _connection_failed(self) -> None:
         self._failures += 1

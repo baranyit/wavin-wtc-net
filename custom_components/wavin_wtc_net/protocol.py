@@ -12,7 +12,7 @@ write planning in this module on purpose.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 
@@ -135,6 +135,8 @@ class Point:
     address: int
     name: str
     confidence: Confidence
+    #: Never changes at runtime (firmware, serial): read after (re)connect, then rarely.
+    static: bool = False
 
 
 _B = Confidence.BOTH
@@ -152,9 +154,9 @@ def controller_points() -> tuple[Point, ...]:
         Point(_H, REG_CONTROLLER_DEW_POINT, "dew_point", _R),
         Point(_H, REG_PROGRAM_CODE, "program_code", _R),
         Point(_H, REG_MODE, "mode", _B),
-        Point(_H, REG_FIRMWARE, "firmware", _R),
-        Point(_H, REG_SERIAL_LOW, "serial_low", _R),
-        Point(_H, REG_SERIAL_HIGH, "serial_high", _R),
+        Point(_H, REG_FIRMWARE, "firmware", _R, static=True),
+        Point(_H, REG_SERIAL_LOW, "serial_low", _R, static=True),
+        Point(_H, REG_SERIAL_HIGH, "serial_high", _R, static=True),
         Point(_C, COIL_HEATING_OUTPUT, "heating_output", _R),
         Point(_C, COIL_COOLING_OUTPUT, "cooling_output", _R),
         Point(_C, COIL_EMERGENCY_WATER_TEMPERATURE, "emergency_water_temperature", _R),
@@ -265,17 +267,20 @@ def plan_reads(
     max_registers: int,
     max_coils: int,
     max_gap: int,
+    blocked: Collection[tuple[Table, int]] = (),
 ) -> tuple[ReadRequest, ...]:
     """Group points into logical spans and split them by hard per-request caps.
 
     A request always starts and ends on a needed address. A new request starts when
     the next address would exceed the table's cap or the hole before it is larger
     than ``max_gap``. Holding registers are planned before coils (HomeGate order).
+    A hole is never bridged if it contains a ``blocked`` address (known to fail).
     """
     if max_registers < 1 or max_coils < 1:
         raise ValueError("request caps must be positive")
     if max_gap < 0:
         raise ValueError("max_gap must not be negative")
+    blocked_set = frozenset(blocked)
     by_table: dict[Table, dict[int, Point]] = {_H: {}, _C: {}}
     for point in points:
         if point.address < 0:
@@ -290,7 +295,10 @@ def plan_reads(
             if current:
                 start = current[0].address
                 previous = current[-1].address
-                if address - start + 1 > cap or address - previous - 1 > max_gap:
+                hole_blocked = any(
+                    (table, hole) in blocked_set for hole in range(previous + 1, address)
+                )
+                if address - start + 1 > cap or address - previous - 1 > max_gap or hole_blocked:
                     requests.append(_close_request(table, current))
                     current = []
             current.append(point)

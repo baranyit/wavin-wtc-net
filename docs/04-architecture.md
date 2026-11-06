@@ -19,3 +19,10 @@ Initial poll default: 60 s, configurable 30–300 s, but never below a minimum d
 
 If a cycle is still running when the next interval arrives, cycles never overlap: skip/coalesce the tick and continue through the same queue. A failed write does not abort unrelated reads unless the connection itself is unusable.
 
+
+## Read policy summary (decisions 2-4)
+
+Steady-state cycle for the real 6+4 profile: 27 requests; first cycle after (re)connect: 29
+(static points). `max_gap` defaults to 8 (0..8). A failing required request is retried in the same
+cycle first without hole reads, then with corroborated points only; failing optional addresses are
+excluded (and never bridged) until the next reconnect. See `docs/open-decisions.md`.

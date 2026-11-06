@@ -191,8 +191,8 @@ async def test_full_snapshot_of_six_plus_four_profile_without_writes() -> None:
         assert zone.wheel_code == 5 and zone.live is True and zone.valve_open is True
 
         # One cycle = exactly the planned requests, all reads, all over one connection.
-        assert len(server.function_codes) == client.requests_per_cycle
-        assert transport.stats.requests_started == client.requests_per_cycle
+        assert len(server.function_codes) == client.first_cycle_requests
+        assert transport.stats.requests_started == client.first_cycle_requests
         assert set(server.function_codes) <= {1, 3}
         assert server.write_codes == []
 
