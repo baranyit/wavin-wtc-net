@@ -9,7 +9,14 @@ split, per-connection exclusions) are implemented in `client.py`, `protocol.py` 
 `plan_reads(blocked=...)`) and `transport.py` (`connection_generation`), with tests in
 `tests/test_client.py`, `tests/test_protocol.py` and `tests/test_soak.py`.
 
-## Still open for plan step 3 (HA layer)
+## Landed in the HA layer (2026-11-07)
+
+Items 1-3 below are implemented: options validation against `minimum_poll_interval`, `max_gap`
+option, diagnostics + Repairs issue for excluded points, polarity constants (`const.py`).
+Still to do: conflicting zone/master bit handling (needs the command layer, plan step 5) and the
+hardware-run logging of status offsets 4/5 vs writable coils 0/1 (plan step 4).
+
+## Original list (for reference)
 
 1. **Options flow:** validate the poll interval against `WtcReadClient.minimum_poll_interval`
    (44 s for the real 6+4 profile; default 60 s, max 300 s); expose `max_gap` (0..8, default 8)

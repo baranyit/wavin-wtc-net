@@ -21,7 +21,11 @@ unless a user explicitly asked for it**.
   pymodbus 3.8.x + latest).
 - **Done – decisions 2-4 in code:** static points on a slow cadence, derived minimum poll
   interval, `max_gap` 0..8, fallback split with per-connection exclusions (`docs/to-code.md`).
-- Not yet done: hassfest/HACS, plan step 1 evidence freeze, plan step 4 hardware validation.
+- **Done – plan step 3 (code):** config/options/reconfigure flows, coordinator over `GatewayPoller`,
+  read-only climate/sensor/binary_sensor entities, translations (en/hu), redacted diagnostics,
+  Repairs issue for excluded points, HA tests in `tests/ha` (CI: hassfest + HACS jobs added;
+  first CI run pending).
+- Not yet done: hassfest/HACS result, plan step 1 evidence freeze, plan step 4 hardware validation.
 - **Open decisions first:** work through `docs/open-decisions.md` with the maintainer, item by item,
   before starting plan step 3. Each item needs a maintainer decision or action.
 - **Then: plan step 3, HA read-only integration** (config/options/reconfigure flows, coordinator
@@ -138,12 +142,11 @@ custom_components/wavin_wtc_net/
   pymodbus_backend.py  ✓ PyModbus adapter (retries=0, no auto-reconnect, slave=/device_id=)
   client.py            ✓ read-only snapshot client (per-unit failure isolation, optional reads)
   poller.py            ✓ non-overlapping cycle driver; commands phase will be added before reads
+  runtime.py, unit_spec.py ✓  HA-free helpers (client factory + probe, "1:6, 2:4" parser)
+  coordinator.py, config_flow.py, entity.py, climate.py, sensor.py, binary_sensor.py,
+  diagnostics.py, strings.json, translations/{en,hu}.json ✓  (read-only HA layer)
   commands.py     # permissions, coalescing queue, expiry tokens, read-back verification
-  coordinator.py  # HA wrapper: freeze queue → writes → reads → verify → snapshot → atomic update
-  config_flow.py  # config / options / reconfigure (all read-only)
-  climate.py, sensor.py, binary_sensor.py, ...  # entities: no I/O in properties
-  diagnostics.py  # redacted
-  strings.json, translations/en.json, translations/hu.json
+  # later: coordinator gains the command phase (freeze queue → writes → reads → verify)
 tests/
 ```
 
@@ -184,7 +187,7 @@ Run before proposing any change (all must be clean). Set up once with
 `uv venv -p 3.13 && uv pip install -e ".[dev]"`, then `source .venv/bin/activate`:
 
 ```
-python -m pytest            # async tests run via tests/conftest.py, no pytest-asyncio needed
+python -m pytest            # async tests run under pytest-asyncio (auto mode) from the HA test plugin
 ruff check . && ruff format --check .
 mypy                        # strict, custom_components only
 ```

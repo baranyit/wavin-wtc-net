@@ -9,7 +9,6 @@ import pytest
 
 PACKAGE = Path(__file__).resolve().parents[1] / "custom_components" / "wavin_wtc_net"
 CORE_MODULES = [
-    "__init__.py",
     "errors.py",
     "models.py",
     "protocol.py",
@@ -17,6 +16,8 @@ CORE_MODULES = [
     "client.py",
     "poller.py",
     "pymodbus_backend.py",
+    "runtime.py",
+    "unit_spec.py",
 ]
 READ_PATH_MODULES = ["protocol.py", "transport.py", "client.py", "poller.py", "pymodbus_backend.py"]
 

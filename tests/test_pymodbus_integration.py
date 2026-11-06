@@ -40,6 +40,9 @@ from custom_components.wavin_wtc_net.transport import GatewayTransport, Transpor
 
 from .mock_wtc import REAL_PROFILE, MockWtcUnit, VirtualClock
 
+# Real loopback sockets only (127.0.0.1); pytest-socket blocks them by default.
+pytestmark = pytest.mark.usefixtures("socket_enabled")
+
 HOST = "127.0.0.1"
 REGISTER_SPAN = range(4100, 4720)
 COIL_SPAN = range(4100, 4680)
