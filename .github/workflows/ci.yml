@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: ruff + mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: |
+          uv venv
+          uv pip install -e ".[dev]"
+      - name: ruff check
+        run: uv run --no-sync ruff check .
+      - name: ruff format
+        run: uv run --no-sync ruff format --check .
+      - name: mypy
+        run: uv run --no-sync mypy
+
+  test:
+    name: pytest (pymodbus ${{ matrix.pymodbus }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Minimum supported (pyproject: pymodbus>=3.8.0) and the newest release.
+        pymodbus: ["3.8.*", "latest"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: |
+          uv venv
+          if [ "${{ matrix.pymodbus }}" = "latest" ]; then
+            uv pip install -e ".[test]"
+          else
+            uv pip install -e ".[test]" "pymodbus==${{ matrix.pymodbus }}"
+          fi
+          uv pip show pymodbus | grep -i '^version'
+      - name: pytest
+        # Includes test_pymodbus_integration.py: real pymodbus client against a
+        # pymodbus TCP server on 127.0.0.1. CI never reaches real hardware.
+        run: uv run --no-sync python -m pytest

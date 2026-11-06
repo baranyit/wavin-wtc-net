@@ -1,0 +1,207 @@
+# Open decisions after milestone 1 (read-only protocol core)
+
+Status: open. Work through these in order. Each item needs a maintainer decision or action before
+the related code changes. Record the outcome under **Decision** and update `AGENTS.md`/the
+relevant spec doc in the same change.
+
+Numbers below come from the current read planner (`max_gap=8`, 15-register / 16-coil caps) for the
+real profile (unit 1: 6 zones, unit 2: 4 zones).
+
+---
+
+## 1. Test the PyModbus adapter with the real library (Python 3.13)
+
+**Context.** `pymodbus_backend.py` is tested only against a fake `pymodbus` module
+(`tests/test_pymodbus_backend.py`, both `slave=` and `device_id=` signatures). The build
+environment had no network, so the real library and Python 3.13 could not be installed.
+
+**Options.**
+- A. Local run on the maintainer's Mac: `uv venv -p 3.13 && uv pip install -e ".[dev]" && pytest`.
+- B. GitHub Actions CI: pytest + ruff + mypy on Python 3.13 with real pymodbus. Optional matrix:
+  minimum supported (3.8.x) and latest pymodbus.
+- C. Both A and B.
+
+In every option, add an integration test that runs `PymodbusBackend` + `GatewayTransport` against a
+local pymodbus Modbus TCP server on localhost. Skip the test when pymodbus is not installed. Never
+point it at real hardware.
+
+**Recommendation.** C. A gives fast feedback now. B prevents regressions and is needed later for
+hassfest/HACS anyway.
+
+**Maintainer input needed.** Choose A/B/C. If B: confirm the GitHub remote and the pymodbus version
+matrix.
+
+**Decision.** C (both), decided 2026-11-06.
+- Local: Python 3.13 venv via `uv` on the maintainer's Mac; full suite green with pymodbus 3.16.2 and 3.8.6.
+- CI: `.github/workflows/ci.yml` (Python 3.13; ruff + mypy; pytest matrix pymodbus 3.8.x and latest)
+  on `baranyit/wavin-wtc-net`.
+- New `tests/test_pymodbus_integration.py`: real client against a localhost pymodbus server. Finding:
+  pymodbus' server data store shifts protocol addresses by +1, so the test server compensates; the
+  adapter itself sends protocol addresses unchanged (offset 0). Absent-unit behaviour differs by
+  pymodbus server version (exception vs. silence), so the test accepts both and asserts recovery.
+
+---
+
+## 2. Cycle length and request count
+
+**Context.** One cycle is 29 requests (16 for unit 1 + 13 for unit 2), so about 29 s at 1 req/s.
+This fits the 60 s default poll interval. The spec allows a minimum of 30 s, which would leave
+almost no slack. Overrunning ticks are skipped, never queued, so it stays safe, but the effective
+interval becomes irregular. Firmware/serial (4500–4502) are static, yet they are read every cycle
+(1 request per unit).
+
+**Options.**
+- A. Keep everything as is.
+- B. Read static data (firmware, serial) only on the first cycle after (re)connect, then hourly.
+  This gives 27 requests per cycle.
+- C. Also move slow-changing reference-only data (setpoints 4178+, economy cool 4700+, packed wheel
+  words) to a slower cadence, e.g. every 5th cycle.
+- D. Raise the minimum poll interval from 30 s to 60 s, or derive the minimum from the plan size
+  (requests × interval × 1.5).
+
+**Recommendation.** B + D. C only if hardware soak shows a need.
+
+**Maintainer input needed.** Choose. D changes `docs/04-architecture.md` (poll range 30–300 s).
+
+**Decision.** B + D (decided 2026-11-06).
+- Static data (firmware, serial 4500–4502) is read on the first cycle after (re)connect and then at
+  most hourly. Steady-state cycle: 27 requests; first cycle after connect: 29.
+- The minimum poll interval is derived from the *full* plan (first-cycle size):
+  `min_interval = ceil(requests × request_spacing × 1.5)`, never below 30 s. For the real profile
+  that is ceil(29 × 1 s × 1.5) = 44 s. The default stays 60 s, the maximum 300 s. The options flow
+  must reject values below the derived minimum.
+- Spec text updated in `docs/04-architecture.md` and `AGENTS.md` §5. Code (planner cadence for
+  static points, derived minimum) is still to be implemented, with tests on the virtual clock.
+- Option C stays deferred until hardware soak shows a need.
+
+---
+
+## 3. Reading through address holes (`max_gap = 8`)
+
+**Context.** Requests bridge up to 8 unused addresses. Values from the holes are discarded. Holes
+currently read:
+
+| Request | Unused addresses read |
+|---|---|
+| registers 4121–4135 | 4122–4126 (documented), 4129–4131 (undocumented) |
+| registers 4166–4180 (unit 1) | 4172–4177 (zone 7 block, documented, not configured) |
+| registers 4600–4609 / 4600–4607 | 4603 / 4602–4603 (documented) |
+| coils 4120–4135 | 4122–4124 (undocumented) |
+| zone control coils 4604+8·n | offsets 3–7 of each zone block (undocumented) |
+
+HomeGate's stable deployment evidences only the register span 4121–4135. If the device answers an
+unused address with "illegal data address", every request covering that hole fails.
+
+Request count per cycle for different gap limits: 0 → 41, 2 → 39, 4 → 36, 8 → 29.
+
+**Options.**
+- A. Keep `max_gap = 8` (fewest requests).
+- B. `max_gap = 0` (no hole reads, 41 requests, about 41 s per cycle; then the 60 s interval is tight).
+- C. Bridge only spans proven readable (start with HomeGate's 4121–4135), and extend the allowlist
+  from the hardware read validation (plan step 4).
+- D. Keep A, but make the gap a per-endpoint advanced option and verify it in the first read-only
+  hardware run.
+
+**Recommendation.** D now. Move to C if the hardware run shows illegal-address responses.
+
+**Maintainer input needed.** Choose. Do you know of any WTC-NET register map (vendor PDF) that lists
+valid ranges?
+
+**Vendor document check (WTC3 BMS interface v1.9, see `docs/vendor-bms-v1_9.md`).** Most holes in
+the table above are *documented* addresses, not unused ones:
+- Registers 4122–4126 (DWP inputs), 4172–4177 (TH7 block) and 4600–4603 (packed wheel positions)
+  are all documented. The vendor lists seven thermostat blocks regardless of installed zones.
+- Only these bridged addresses are **undocumented**: registers 4129–4131 (3), coils 4122–4124 (3)
+  and coil offsets 3–7 between zone control blocks (5 per block, e.g. 4607–4611).
+- Bridging documented addresses only gives 40 requests per cycle (no real saving over gap 0).
+  Bridging the undocumented holes is what makes 29.
+- Evidence that the undocumented holes are readable: HomeGate's stable deployment reads register
+  span 4121–4135 (includes 4129–4131), and its 480-coil reads (the vendor's own per-message
+  limit is 30 registers / 480 bits) necessarily cover undocumented coil addresses. The vendor
+  document itself says nothing about the response to undocumented addresses.
+
+**Decision.** D (decided 2026-11-06, from the vendor document).
+- Keep `max_gap = 8` as the default (29 requests per cycle) and make it a per-endpoint advanced
+  option (0–8). Do not raise it above 8.
+- The first read-only hardware run (plan step 4) must record whether any bridged read returns an
+  illegal-address exception. If so, switch to C: bridge only documented addresses plus proven spans.
+- A failing required request is handled by the fallback split of decision 4.
+- Coding task queued in `docs/to-code.md`.
+
+---
+
+## 4. Reference-only addresses inside required requests
+
+**Context.** A request is *required* if it covers at least one corroborated ("both") point. A
+reference-only address in the same request can fail the whole request. A failed required request
+makes the whole unit unavailable. Example: zone register blocks interleave corroborated offsets
+(0–2) with reference-only offsets (3–5).
+
+**Options.**
+- A. Keep as is. A hardware failure shows up immediately as an unavailable unit with a clear error.
+- B. Fallback split: when a required request gets a Modbus exception, retry in the same cycle with
+  only its corroborated addresses (more requests only in the failure case, still paced at 1 req/s).
+  Remember the failing optional addresses per connection so later cycles plan without them.
+- C. Plan corroborated and reference-only points separately: always 49 requests per cycle (too
+  slow for 60 s).
+
+**Recommendation.** B. It keeps the normal cycle at 29 requests and degrades gracefully. Log a
+Repairs/diagnostic entry naming the failing addresses.
+
+**Maintainer input needed.** Choose.
+
+**Vendor document check (`docs/vendor-bms-v1_9.md`).** Every point we read is vendor-documented,
+including the former reference-only ones (zone offsets 3–5, setpoints 4178+/4700+, 4500–4503,
+4600–4603, status coil offsets 4–6, lock status). The risk of a Modbus exception is therefore
+lower than assumed, but documented is not hardware-validated (firmware variants, gateway behaviour).
+
+**Decision.** B (decided 2026-11-07).
+- When a required request gets a Modbus exception, retry in the same cycle with only its
+  corroborated addresses (still paced at 1 req/s, caps unchanged). The normal cycle stays at 29
+  requests.
+- Remember the failing optional addresses per connection; later cycles plan without them. Forget
+  them on reconnect so a transient fault does not hide data permanently.
+- Emit a diagnostics entry (and Repairs issue in plan step 3) naming the failing addresses.
+- If even the corroborated-only retry fails, the unit becomes unavailable as before.
+- Coding task queued in `docs/to-code.md`.
+
+---
+
+## 5. Coil polarity (`on_off`, `comfort_economy`, `heat_cool`)
+
+**Context.** The meaning of a set bit is not confirmed for global coils 4127–4129, zone status
+offsets 4–6 or zone control offsets 0–2. Snapshots therefore use neutral names and raw booleans. The
+HA climate entity (plan step 3) needs to know e.g. whether `heat_cool = True` means cooling.
+
+**Options.**
+- A. Maintainer states the current physical state (e.g. "heating, comfort, all zones on"). One
+  read-only integration test run on the real endpoint correlates the bits with that state.
+- B. Keep neutral in the core and add a polarity mapping in the HA layer (constants first,
+  configurable only if units differ). Confirm it in plan step 4.
+- C. Both: B as the structure, A as the evidence.
+
+**Recommendation.** C. A read-only integration test run is allowed by `AGENTS.md` §10. Write mode
+stays off.
+
+**Maintainer input needed.** Current physical state of the installation (mode, preset, which zones
+are on). Approval for a read-only integration test run against `192.168.1.204:502`.
+
+**Evidence.** Two independent sources agree, so polarity is no longer unknown:
+- Vendor document (`docs/vendor-bms-v1_9.md`): ON/OFF on = 1, C/E comfort = 1, H/C cooling = 1,
+  lock locked = 1, LIVE connected = 1, DRY/condensation = 1.
+- HomeGate (`wavin/definition/Mapper.java`, `Thermostat.java`, `Wtc.java`): `ON_OFF_MAP` true → on,
+  `E_C_MAP` true → comfort / false → eco, `H_C_MAP` true → cool / false → heat. Applied to zone
+  status offset 6 (cooling) and 7 (connected), writable coils 4604+8·n (on) and +1 (comfort), lock
+  coils 4656+, and master coils 4127 (on), 4128 (comfort), 4129 (cooling).
+- Side finding: HomeGate reads zone on/comfort from the writable coils (offsets 0 and 1 of
+  4604+8·n), not from status offsets 4/5. The vendor document says those two sets mirror each
+  other ("see 4134–4136"), so either works; compare both in the first hardware run.
+
+**Decision.** B with the evidence above (decided 2026-11-07).
+- Core snapshots keep neutral names and raw booleans. The HA layer owns one constants table:
+  on_off True = on; comfort_economy True = comfort; heat_cool True = cool; lock True = locked;
+  live True = connected. Not user-configurable.
+- No separate hardware run is needed for polarity. The first read-only run (plan step 4) only
+  confirms it by checking the bits against the physical state and compares status offsets 4/5
+  with writable coils offsets 0/1. A mismatch reopens this decision.
+- Coding task queued in `docs/to-code.md`.
