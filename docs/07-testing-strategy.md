@@ -12,9 +12,9 @@
 ## Continuous integration
 
 GitHub Actions (`.github/workflows/ci.yml`) on every push to `main` and every pull request, Python 3.13:
-ruff check/format and strict mypy once; pytest on a pymodbus matrix of the minimum supported release (3.8.x) and the newest release. hassfest and HACS validation will be added with the HA layer (plan step 3).
+ruff check/format and strict mypy once; pytest on a pymodbus matrix of the minimum supported release (3.8.x) and the newest release. hassfest and HACS validation run as separate jobs (HACS needs a public repository with topics and brand assets).
 
-Local equivalent (see `AGENTS.md` §9): `uv venv -p 3.13 && uv pip install -e ".[dev]"`, then pytest, ruff and mypy.
+Local equivalent (see `AGENTS.md` §9): `uv venv -p 3.13 && uv pip install -e ".[dev]" -C editable_mode=compat`, then pytest, ruff and mypy. The compat editable mode is required because Home Assistant scans `sys.path` and fails on the default editable finder.
 
 ## Hardware
 
