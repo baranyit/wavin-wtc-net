@@ -205,3 +205,31 @@ are on). Approval for a read-only integration test run against `192.168.1.210:50
   confirms it by checking the bits against the physical state and compares status offsets 4/5
   with writable coils offsets 0/1. A mismatch reopens this decision.
 - Coding task queued in `docs/to-code.md`.
+
+## 6. Cooling polarity and cooling targets (decided 2026-11-07)
+
+Option chosen: accept from the vendor document and HomeGate without a hardware measurement. The
+installation is in heating season. Cooling polarity stays as in decision 5. The cooling target
+formula stays configurable and testable, but **no cooling target write is built** until a cooling
+read-only run confirms it. Revisit when the installation switches to cooling.
+
+## 7. Lock in the MVP (decided 2026-11-07)
+
+Read only. The lock status (candidate 4186+) is shown, all zones are currently unlocked. Lock
+writes (4656+) and the lock delay measurement come with the command layer and a separately
+approved single-zone test. Authoritative lock status address stays open until then.
+
+## 8. Confidence labels (decided 2026-11-07)
+
+Re-graded per evidence, in the documents only: see "Evidence status" in
+`docs/02-protocol-specification.md`. The code `Confidence` enum is not changed, so read fallback
+and write eligibility behave as before. Open: whether a hardware-confirmed tier should be added to
+the enum when the command layer needs it.
+
+## 9. Wheel formula (decided 2026-11-07)
+
+Three dial checks suffice for heating: comfort target = comfort setpoint + (code − 6) × 0.5 °C;
+economy target = economy setpoint (wheel not applied). Cooling is untested (decision 6).
+Details: `docs/hardware-validation-2026-11-07.md`. Open: why the vendor says nothing about the step
+size, and whether other thermostat models differ.
+
