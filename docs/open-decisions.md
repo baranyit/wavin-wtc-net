@@ -289,6 +289,10 @@ FC05 through the same queue, read-back from the status coil 4186+ with 4 verific
 lag is unknown), a `lock` entity only for lock zones, `tests/hardware/test_lock_validation.py`. The
 command coil itself is not read. The lock entity shows only the polled status.
 
+**Hardware result (2026-11-08):** the one-zone lock test passed on Dolgozó, see
+`docs/hardware-lock-test-2026-11-08.md`: lock and unlock both confirmed within the writing cycle,
+status address 4186+ confirmed. Lock writes are accepted for the MVP.
+
 ## 14. Economy (decided 2026-11-07)
 
 Stays read-only. The economy heating target is shown, the integration does not set it.
