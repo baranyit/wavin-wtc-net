@@ -24,17 +24,18 @@ offset +2.0 C, comfort heat setpoint 22 C, comfort bit set, heat/cool bit clear.
 rejected for this installation. One zone, one value: re-check one more zone and a cooling case
 before treating the 0.5 C step as universal.
 
-## Dial check 2 (Konyha, unit 1 zone 1): economy mismatch
+## Dial check 2 (corrected by the maintainer)
 
-Reported: heating, economy, dial shows 21.5 C. The run read code 5, offset -0.5 C, economy bit set
-(status and control), economy heat setpoint register 17 C, comfort heat setpoint 22 C.
-`22 + (-0.5) = 21.5` matches the dial; `17 + (-0.5) = 16.5` does not. So in economy the dial value
-is relative to 22 C (the comfort heat value / neutral point), not to the economy setpoint register
-(4178+3(z-1)+2). The 0.5 C step is confirmed again, but the `active_reference(mode, preset)` part
-of the formula is **not** validated for economy: either the reference is the same 22 C in both
-presets, or register +2 is not the economy reference (decision: keep both candidates testable, no
-economy target writes until clarified). Next check: an economy zone with a different dial value, and
-whether the thermostat display (21.5) equals the real regulation target or a setback applies.
+- Konyha (unit 1 zone 1): heating, economy, dial 17 C. Run: code 5 (offset -0.5), economy bit set,
+  economy heat setpoint 17 C. The economy target equals the economy setpoint register; the wheel
+  position (-0.5) is **not** applied in economy. `17 + (-0.5) = 16.5` would be wrong.
+- Nappali (unit 1 zone 2): heating, comfort, dial 23.5 C. Run: code 9 (offset +1.5), comfort heat
+  22 C. `22 + 1.5 = 23.5` matches.
+
+Working hypothesis (two zones, one heating state): comfort target = comfort setpoint + wheel
+offset; economy target = economy setpoint, wheel ignored. The formula's
+`active_reference(mode, preset)` stays configurable; economy cooling and comfort cooling are
+untested. No economy wheel writes: a wheel change would have no effect on the target there.
 
 Still open: cooling polarity (needs cool mode), lock delay.
 Raw reports stay local (`tests/hardware/reports/`, git-ignored).
