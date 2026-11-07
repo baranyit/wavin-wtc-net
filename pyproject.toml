@@ -16,6 +16,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-ra"
 asyncio_mode = "auto"
+markers = ["hardware: opt-in read-only validation against a real endpoint (never in CI)"]
 
 [tool.ruff]
 target-version = "py313"

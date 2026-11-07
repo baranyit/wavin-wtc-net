@@ -213,7 +213,7 @@ The reference mock topology is two units with 6 + 4 zones (matches the real inst
 
 ## 10. Hardware and the real installation
 
-Real profile (a test fixture, **not** a universal default): endpoint `192.168.1.204:502`.
+Real profile (a test fixture, **not** a universal default): endpoint `192.168.1.210:502`.
 Unit 1: Konyha, Nappali, Balu, Gábor, Luca, Fürdő. Unit 2: Garázs, Dolgozó, Háló, Zuhany.
 Neutral 22 °C heating / 26 °C cooling. Wheel step 0.5 °C.
 

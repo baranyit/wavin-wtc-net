@@ -7,3 +7,6 @@ __pycache__/
 *.egg-info/
 .coverage
 htmlcov/
+
+# local hardware validation reports
+tests/hardware/reports/
