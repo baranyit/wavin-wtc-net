@@ -332,3 +332,20 @@ diagnostics only; it is not used for identification.
 
 Not yet. First the remaining open points (zone mode hardware test, cooling-season read-only run,
 termostat behaviour while locked); then plan step 7 (README, supported-device matrix, release).
+
+## 19. Cooling (decided 2026-11-08)
+
+Not handled now. The cooling polarity check and any cooling hardware test are postponed to the
+cooling season (summer). Until then cooling stays as in decision 11: enabled by rule, simulator
+tested, documented as experimental and not validated on hardware.
+
+## 20. Power cycle persistence (decided 2026-11-08)
+
+Not tested. If written values turn out not to survive a controller power cycle, handle it as a bug
+then (no preventive keepalive or re-write; AGENTS safety rule 5 and 7 stay).
+
+## 21. Publication documents (decided 2026-11-08)
+
+Prepared but not executed: `README.md`, `CHANGELOG.md`, `docs/supported-devices.md`,
+`docs/release-checklist.md`. No tag, no GitHub release, no HACS submission yet. The maintainer
+triggers publication explicitly.
