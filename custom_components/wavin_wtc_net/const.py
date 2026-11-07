@@ -16,11 +16,18 @@ CONF_GATEWAY_ID: Final = "gateway_id"
 CONF_UNITS: Final = "units"  # {"1": 6, "2": 4}: Modbus unit ID -> number of zones
 CONF_POLL_INTERVAL: Final = "poll_interval"
 CONF_MAX_GAP: Final = "max_gap"
+CONF_NEUTRAL_HEAT: Final = "neutral_heat"
+CONF_NEUTRAL_COOL: Final = "neutral_cool"
+CONF_WHEEL_STEP_HEAT: Final = "wheel_step_heat"
+CONF_WHEEL_STEP_COOL: Final = "wheel_step_cool"
 
 DEFAULT_NAME: Final = "Wavin WTC-NET"
 DEFAULT_PORT: Final = 502
 DEFAULT_POLL_INTERVAL: Final = 60
 MAX_POLL_INTERVAL: Final = 300
+DEFAULT_NEUTRAL_HEAT: Final = 22.0
+DEFAULT_NEUTRAL_COOL: Final = 26.0
+DEFAULT_WHEEL_STEP: Final = 0.5
 
 ON_OFF_ON: Final = True
 COMFORT: Final = True

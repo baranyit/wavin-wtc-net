@@ -397,6 +397,53 @@ PYTHON_REFERENCE_WHEEL_SCALE = WheelScale(step=1.0)
 TARGET_TOLERANCE = 1e-6
 
 
+@dataclass(frozen=True, slots=True)
+class WheelCalibration:
+    """Per-installation comfort-target calibration (docs/05-configuration.md).
+
+    ``target = neutral(cooling) + (code - center_code) * step(cooling)`` for the comfort preset.
+    Heating and cooling have their own neutral value and step. Economy targets do not use the
+    wheel (docs/hardware-validation-2026-11-07.md): they come from the economy setpoint registers.
+    """
+
+    neutral_heat: float = 22.0
+    neutral_cool: float = 26.0
+    step_heat: float = 0.5
+    step_cool: float = 0.5
+    center_code: int = 6
+    min_code: int = 0
+    max_code: int = 12
+
+    def __post_init__(self) -> None:
+        for name in ("neutral_heat", "neutral_cool"):
+            if not math.isfinite(getattr(self, name)):
+                raise ValueError(f"{name} must be finite")
+        self.scale(cooling=False)  # validates step_heat and the code range
+        self.scale(cooling=True)
+
+    def scale(self, *, cooling: bool) -> WheelScale:
+        return WheelScale(
+            center_code=self.center_code,
+            min_code=self.min_code,
+            max_code=self.max_code,
+            step=self.step_cool if cooling else self.step_heat,
+        )
+
+    def neutral(self, *, cooling: bool) -> float:
+        return self.neutral_cool if cooling else self.neutral_heat
+
+    def comfort_target(self, code: int, *, cooling: bool) -> float:
+        return wheel_code_to_target(
+            code, self.neutral(cooling=cooling), self.scale(cooling=cooling)
+        )
+
+    def comfort_code(self, target: float, *, cooling: bool) -> int:
+        """Exact raw code for a requested comfort target; raises ``ValueError`` otherwise."""
+        return target_to_wheel_code(
+            target, self.neutral(cooling=cooling), self.scale(cooling=cooling)
+        )
+
+
 def wheel_code_to_target(code: int, reference: float, scale: WheelScale) -> float:
     if not scale.min_code <= code <= scale.max_code:
         raise ValueError(f"wheel code {code} outside {scale.min_code}..{scale.max_code}")
@@ -415,6 +462,26 @@ def target_to_wheel_code(
     if not scale.min_code <= code <= scale.max_code:
         raise ValueError(f"target {target} outside wheel range")
     return code
+
+
+def zone_target_temperature(
+    zone: ZoneSnapshot, calibration: WheelCalibration, *, cooling: bool, comfort: bool
+) -> float | None:
+    """Regulation target of a zone as read from the device; ``None`` when not derivable.
+
+    Comfort: neutral + (wheel code - centre) x step, separately for heating and cooling (cooling
+    follows the heating rule with its own neutral/step, decided 2026-11-07; no cooling run yet).
+    Economy heating: the economy setpoint register, the wheel is not applied (hardware dial
+    checks). Economy cooling is unvalidated and therefore unavailable, never guessed.
+    """
+    if comfort:
+        if zone.wheel_code is None:
+            return None
+        try:
+            return calibration.comfort_target(zone.wheel_code, cooling=cooling)
+        except ValueError:
+            return None
+    return None if cooling else zone.economy_heat_setpoint
 
 
 # --- Snapshot decoding -------------------------------------------------------------------

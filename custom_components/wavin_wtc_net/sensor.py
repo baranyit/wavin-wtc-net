@@ -16,9 +16,22 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import WtcConfigEntry
-from .const import COMFORT, CONF_UNITS
+from .const import (
+    COMFORT,
+    CONF_NEUTRAL_COOL,
+    CONF_NEUTRAL_HEAT,
+    CONF_UNITS,
+    CONF_WHEEL_STEP_COOL,
+    CONF_WHEEL_STEP_HEAT,
+    COOLING,
+    DEFAULT_NEUTRAL_COOL,
+    DEFAULT_NEUTRAL_HEAT,
+    DEFAULT_WHEEL_STEP,
+    ON_OFF_ON,
+)
 from .entity import WtcEntity
 from .models import ControllerSnapshot, ZoneSnapshot
+from .protocol import WheelCalibration, zone_target_temperature
 
 PARALLEL_UPDATES = 0
 
@@ -223,6 +236,7 @@ async def async_setup_entry(
         entities += [WtcControllerSensor(entry, unit, d) for d in CONTROLLER_SENSORS]
         for zone in range(1, zones + 1):
             entities += [WtcZoneSensor(entry, unit, zone, d) for d in ZONE_SENSORS]
+            entities.append(WtcTargetSensor(entry, unit, zone))
     async_add_entities(entities)
 
 
@@ -254,3 +268,52 @@ class WtcZoneSensor(WtcEntity, SensorEntity):
     def native_value(self) -> float | int | str | None:
         zone = self.zone_snapshot
         return self.entity_description.value_fn(zone) if zone else None
+
+
+TARGET_DESCRIPTION = SensorEntityDescription(
+    key="target_temperature",
+    translation_key="target_temperature",
+    device_class=SensorDeviceClass.TEMPERATURE,
+    native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+    state_class=SensorStateClass.MEASUREMENT,
+)
+
+
+class WtcTargetSensor(WtcEntity, SensorEntity):
+    """Regulation target derived from the polled wheel code and the entry's calibration.
+
+    A sensor, not the climate target: the climate entity stays without controls until plan step 5.
+    Unknown mode/preset, off, or an unvalidated case (economy cooling) gives no value.
+    """
+
+    entity_description = TARGET_DESCRIPTION
+
+    def __init__(self, entry: WtcConfigEntry, unit_id: int, zone: int) -> None:
+        super().__init__(entry, unit_id, zone, TARGET_DESCRIPTION.key)
+        options = entry.options
+        self._calibration = WheelCalibration(
+            neutral_heat=float(options.get(CONF_NEUTRAL_HEAT, DEFAULT_NEUTRAL_HEAT)),
+            neutral_cool=float(options.get(CONF_NEUTRAL_COOL, DEFAULT_NEUTRAL_COOL)),
+            step_heat=float(options.get(CONF_WHEEL_STEP_HEAT, DEFAULT_WHEEL_STEP)),
+            step_cool=float(options.get(CONF_WHEEL_STEP_COOL, DEFAULT_WHEEL_STEP)),
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        zone = self.zone_snapshot
+        if zone is None:
+            return None
+        on = zone.on_off if zone.on_off is not None else zone.control_on_off
+        preset = (
+            zone.comfort_economy
+            if zone.comfort_economy is not None
+            else zone.control_comfort_economy
+        )
+        if on != ON_OFF_ON or zone.heat_cool is None or preset is None:
+            return None
+        return zone_target_temperature(
+            zone,
+            self._calibration,
+            cooling=zone.heat_cool == COOLING,
+            comfort=preset == COMFORT,
+        )

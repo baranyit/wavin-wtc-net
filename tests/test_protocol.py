@@ -227,3 +227,72 @@ def test_blocked_address_is_never_bridged() -> None:
     assert [(r.address, r.count) for r in plan] == [(10, 1), (14, 1)]
     other = [(p.Table.HOLDING_REGISTER, 12)]
     assert len(p.plan_reads(pts, max_gap=8, blocked=other, **caps)) == 1
+
+
+# --- wheel calibration (heating and cooling, decided 2026-11-07) ---------------------------
+
+
+def _zone(code: int | None, *, economy_heat: float | None = 17.0) -> p.ZoneSnapshot:
+    image = p.RawImage.build(
+        {
+            p.zone_wheel_code_register(1): code if code is not None else 0xFFFF,
+            p.zone_setpoint_base(1) + 2: int((economy_heat or 0) * 10),
+        },
+        {},
+    )
+    return p.decode_zone(image, 1)
+
+
+def test_calibration_defaults_match_the_real_installation() -> None:
+    cal = p.WheelCalibration()
+    assert (cal.neutral_heat, cal.neutral_cool, cal.step_heat, cal.step_cool) == (22, 26, 0.5, 0.5)
+    assert cal.comfort_target(10, cooling=False) == 24.0  # Dolgozo dial check
+    assert cal.comfort_target(9, cooling=False) == 23.5  # Nappali dial check
+    assert cal.comfort_target(6, cooling=True) == 26.0
+    assert cal.comfort_target(8, cooling=True) == 27.0
+
+
+def test_heating_and_cooling_have_independent_neutral_and_step() -> None:
+    cal = p.WheelCalibration(neutral_heat=21.0, neutral_cool=25.0, step_heat=0.5, step_cool=1.0)
+    assert cal.comfort_target(8, cooling=False) == 22.0
+    assert cal.comfort_target(8, cooling=True) == 27.0
+    assert cal.comfort_target(0, cooling=True) == 19.0
+    for code in range(13):
+        for cooling in (False, True):
+            target = cal.comfort_target(code, cooling=cooling)
+            assert cal.comfort_code(target, cooling=cooling) == code
+
+
+def test_calibration_never_rounds_a_partial_step() -> None:
+    cal = p.WheelCalibration(step_cool=1.0)
+    assert cal.comfort_code(24.5, cooling=False) == 11
+    with pytest.raises(ValueError, match="whole wheel step"):
+        cal.comfort_code(26.5, cooling=True)
+    with pytest.raises(ValueError, match="outside wheel range"):
+        cal.comfort_code(40.0, cooling=False)
+
+
+@pytest.mark.parametrize("bad", [0.0, -0.5, float("nan"), float("inf")])
+def test_calibration_rejects_invalid_steps(bad: float) -> None:
+    with pytest.raises(ValueError, match="step"):
+        p.WheelCalibration(step_heat=bad)
+    with pytest.raises(ValueError, match="step"):
+        p.WheelCalibration(step_cool=bad)
+
+
+def test_calibration_rejects_non_finite_neutral() -> None:
+    with pytest.raises(ValueError, match="neutral"):
+        p.WheelCalibration(neutral_heat=float("nan"))
+    with pytest.raises(ValueError, match="neutral"):
+        p.WheelCalibration(neutral_cool=float("inf"))
+
+
+def test_zone_target_comfort_economy_and_unknowns() -> None:
+    cal = p.WheelCalibration()
+    assert p.zone_target_temperature(_zone(10), cal, cooling=False, comfort=True) == 24.0
+    # economy heating ignores the wheel (Konyha: code 5, dial 17 C)
+    assert p.zone_target_temperature(_zone(5), cal, cooling=False, comfort=False) == 17.0
+    # unvalidated or unknown -> unavailable, never guessed
+    assert p.zone_target_temperature(_zone(5), cal, cooling=True, comfort=False) is None
+    assert p.zone_target_temperature(_zone(None), cal, cooling=False, comfort=True) is None
+    assert p.zone_target_temperature(_zone(13), cal, cooling=False, comfort=True) is None

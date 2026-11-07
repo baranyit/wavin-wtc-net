@@ -51,6 +51,61 @@ async def test_setup_creates_ten_climate_devices_without_writes(
     assert {r.op for r in mock_device.records} <= {"read_holding_registers", "read_coils"}
 
 
+async def test_target_temperature_uses_the_calibration(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    await _setup(hass, mock_entry)
+    ent_reg = er.async_get(hass)
+    entity_id = ent_reg.async_get_entity_id(
+        "sensor", DOMAIN, f"{GATEWAY_ID}_u2_z3_target_temperature"
+    )
+    assert entity_id is not None
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert float(state.state) == 21.5  # code 5, neutral 22, step 0.5 (comfort)
+    assert mock_device.writes == []
+
+
+async def test_custom_wheel_calibration_changes_the_target(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    mock_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_entry,
+        options={**mock_entry.options, "neutral_heat": 20.0, "wheel_step_heat": 1.0},
+    )
+    await _setup(hass, mock_entry)
+    ent_reg = er.async_get(hass)
+    entity_id = ent_reg.async_get_entity_id(
+        "sensor", DOMAIN, f"{GATEWAY_ID}_u2_z3_target_temperature"
+    )
+    assert entity_id is not None
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert float(state.state) == 19.0  # 20 + (5 - 6) x 1.0
+
+
+async def test_options_accept_calibration_and_keep_defaults(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    await _setup(hass, mock_entry)
+    result = await hass.config_entries.options.async_init(mock_entry.entry_id)
+    ok = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_POLL_INTERVAL: 60,
+            CONF_MAX_GAP: 8,
+            "neutral_heat": 21.5,
+            "neutral_cool": 25.0,
+            "wheel_step_heat": 0.5,
+            "wheel_step_cool": 1.0,
+        },
+    )
+    assert ok["type"] is FlowResultType.CREATE_ENTRY
+    assert mock_entry.options["neutral_cool"] == 25.0
+    assert mock_entry.options["wheel_step_cool"] == 1.0
+
+
 async def test_identity_is_gateway_id_based_not_entry_id(
     hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
 ) -> None:
@@ -138,7 +193,14 @@ async def test_user_flow_creates_entry_with_generated_gateway_id(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"]["units"] == {"1": 6, "2": 4}
     assert len(result["data"][CONF_GATEWAY_ID]) == 32
-    assert result["options"] == {CONF_POLL_INTERVAL: 60, CONF_MAX_GAP: 8}
+    assert result["options"] == {
+        CONF_POLL_INTERVAL: 60,
+        CONF_MAX_GAP: 8,
+        "neutral_heat": 22.0,
+        "neutral_cool": 26.0,
+        "wheel_step_heat": 0.5,
+        "wheel_step_cool": 0.5,
+    }
 
 
 async def test_user_flow_rejects_bad_units_and_unreachable_endpoint(

@@ -37,5 +37,8 @@ offset; economy target = economy setpoint, wheel ignored. The formula's
 `active_reference(mode, preset)` stays configurable; economy cooling and comfort cooling are
 untested. No economy wheel writes: a wheel change would have no effect on the target there.
 
+Cooling (maintainer decision, no measurement): same rule as heating with the cooling neutral
+(26 C) and `wheel_step_cool`; see `open-decisions.md` decision 6.
+
 Still open: cooling polarity (needs cool mode), lock delay.
 Raw reports stay local (`tests/hardware/reports/`, git-ignored).
