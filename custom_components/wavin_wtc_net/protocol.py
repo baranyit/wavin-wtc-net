@@ -77,7 +77,7 @@ COIL_ZONE_STATUS_STRIDE = 8
 COIL_ZONE_CONTROL_BASE = 4604
 COIL_ZONE_CONTROL_STRIDE = 8
 COIL_LOCK_STATUS_BASE = 4186
-COIL_LOCK_COMMAND_BASE = 4656  # documented for completeness; never read or written here
+COIL_LOCK_COMMAND_BASE = 4656  # written only by the lock command (write_transport allow-list)
 
 GLOBAL_COILS = frozenset({COIL_GLOBAL_ON_OFF, COIL_GLOBAL_COMFORT_ECONOMY, COIL_GLOBAL_HEAT_COOL})
 
@@ -120,6 +120,10 @@ def zone_status_coil_base(zone: int) -> int:
 
 def zone_control_coil_base(zone: int) -> int:
     return COIL_ZONE_CONTROL_BASE + COIL_ZONE_CONTROL_STRIDE * (validate_zone(zone) - 1)
+
+
+def zone_lock_command_coil(zone: int) -> int:
+    return COIL_LOCK_COMMAND_BASE + validate_zone(zone) - 1
 
 
 def zone_lock_status_coil(zone: int) -> int:

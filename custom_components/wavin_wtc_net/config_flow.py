@@ -14,6 +14,7 @@ from homeassistant.helpers import config_validation as cv
 from .client import DEFAULT_MAX_GAP, MAX_ALLOWED_GAP
 from .const import (
     CONF_GATEWAY_ID,
+    CONF_LOCK_ZONES,
     CONF_MAX_GAP,
     CONF_NEUTRAL_COOL,
     CONF_NEUTRAL_HEAT,
@@ -106,6 +107,7 @@ class WtcConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_WHEEL_STEP_COOL: DEFAULT_WHEEL_STEP,
                         CONF_WRITE_ENABLED: False,
                         CONF_WRITABLE_ZONES: [],
+                        CONF_LOCK_ZONES: [],
                     },
                 )
             errors["base"] = error or "unknown"
@@ -170,7 +172,11 @@ class WtcOptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             if user_input[CONF_POLL_INTERVAL] < minimum:
                 errors[CONF_POLL_INTERVAL] = "interval_too_low"
-            elif user_input[CONF_WRITE_ENABLED] and not user_input[CONF_WRITABLE_ZONES]:
+            elif (
+                user_input[CONF_WRITE_ENABLED]
+                and not user_input[CONF_WRITABLE_ZONES]
+                and not user_input[CONF_LOCK_ZONES]
+            ):
                 errors[CONF_WRITABLE_ZONES] = "no_zone_selected"
             else:
                 return self.async_create_entry(data=user_input)
@@ -208,6 +214,9 @@ class WtcOptionsFlow(OptionsFlowWithReload):
                 ): bool,
                 vol.Required(
                     CONF_WRITABLE_ZONES, default=current.get(CONF_WRITABLE_ZONES, [])
+                ): cv.multi_select(zone_choices),
+                vol.Required(
+                    CONF_LOCK_ZONES, default=current.get(CONF_LOCK_ZONES, [])
                 ): cv.multi_select(zone_choices),
             }
         )

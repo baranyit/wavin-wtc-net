@@ -10,11 +10,13 @@ import pytest
 from custom_components.wavin_wtc_net import protocol as p
 from custom_components.wavin_wtc_net.commands import (
     CommandExecutor,
+    CommandKind,
     CommandPermissions,
     CommandQueue,
     CommandRejectedError,
     CommandStatus,
     RejectReason,
+    validate_lock_target,
     validate_wheel_target,
 )
 from custom_components.wavin_wtc_net.errors import WtcRequestRejectedError
@@ -68,7 +70,9 @@ class Rig:
             calibration=CAL,
             permissions=self.permissions,
         )
-        command = self.queue.create(unit, zone, target, code, self.transport.connection_generation)
+        command = self.queue.create(
+            CommandKind.WHEEL_TARGET, unit, zone, target, code, self.transport.connection_generation
+        )
         return self.queue.submit(command)
 
 
@@ -442,3 +446,104 @@ async def test_cooling_economy_is_still_rejected() -> None:
             permissions=ALLOW_2_2,
         )
     assert err.value.reason is RejectReason.NOT_COMFORT
+
+
+# -- lock commands (decision 13): separate opt-in, status lags the command ---------------------
+
+LOCK_COIL = p.zone_lock_command_coil
+LOCK_RIG = CommandPermissions(True, frozenset(), frozenset({(1, 4)}))
+
+
+def _submit_lock(rig: Rig, unit: int, zone: int, locked: bool, snapshot: GatewaySnapshot) -> None:
+    validate_lock_target(unit_id=unit, zone=zone, snapshot=snapshot, permissions=rig.permissions)
+    rig.queue.submit(
+        rig.queue.create(
+            CommandKind.LOCK, unit, zone, locked, int(locked), rig.transport.connection_generation
+        )
+    )
+
+
+async def test_lock_permission_is_separate_from_wheel_permission() -> None:
+    rig = Rig(LOCK_RIG)
+    snapshot = await rig.cycle()
+    _submit_lock(rig, 1, 4, True, snapshot)  # allowed
+    with pytest.raises(CommandRejectedError) as err:
+        _submit_lock(rig, 1, 3, True, snapshot)
+    assert err.value.reason is RejectReason.ZONE_NOT_PERMITTED
+    with pytest.raises(CommandRejectedError) as wheel_err:  # no wheel permission for this zone
+        validate_wheel_target(
+            unit_id=1,
+            zone=4,
+            target=22.0,
+            snapshot=snapshot,
+            calibration=CAL,
+            permissions=LOCK_RIG,
+        )
+    assert wheel_err.value.reason is RejectReason.ZONE_NOT_PERMITTED
+    off = CommandPermissions(False, frozenset(), frozenset({(1, 4)}))
+    with pytest.raises(CommandRejectedError) as off_err:
+        validate_lock_target(unit_id=1, zone=4, snapshot=snapshot, permissions=off)
+    assert off_err.value.reason is RejectReason.WRITE_DISABLED
+
+
+async def test_lock_is_queued_then_written_as_a_single_coil_before_the_reads() -> None:
+    rig = Rig(LOCK_RIG)
+    snapshot = await rig.cycle()
+    rig.clock.now += 60
+    before = len(rig.backend.records)
+    _submit_lock(rig, 1, 4, True, snapshot)
+    assert len(rig.backend.records) == before and rig.backend.writes == []
+    after = await rig.cycle()
+    cycle_ops = rig.backend.records[before:]
+    assert cycle_ops[0].op == "write_coil" and all(r.op != "write_coil" for r in cycle_ops[1:])
+    assert rig.backend.writes == [("write_coil", 1, LOCK_COIL(4), True)]
+    assert after.unit(1).zone(4).lock_status is True  # type: ignore[union-attr]
+    record = rig.queue.latest(1, 4, CommandKind.LOCK)
+    assert record is not None and record.status is CommandStatus.CONFIRMED
+    # no global coil and no other zone's coil
+    assert not [w for w in rig.backend.writes if w[2] in (4127, 4128, 4129)]
+
+
+async def test_lagging_lock_status_is_confirmed_by_a_later_cycle_without_rewrite() -> None:
+    rig = Rig(LOCK_RIG)
+    rig.backend.lock_delay = 100.0
+    snapshot = await rig.cycle()
+    rig.clock.now += 60
+    _submit_lock(rig, 1, 4, True, snapshot)
+    await rig.cycle()
+    record = rig.queue.latest(1, 4, CommandKind.LOCK)
+    assert record is not None and record.status is CommandStatus.SENT  # status still lags
+    for _ in range(3):  # confirmed within the verification window, never rewritten
+        rig.clock.now += 60
+        await rig.cycle()
+        record = rig.queue.latest(1, 4, CommandKind.LOCK)
+        assert record is not None
+        if record.status is CommandStatus.CONFIRMED:
+            break
+    assert record.status is CommandStatus.CONFIRMED
+    assert len(rig.backend.writes) == 1
+
+
+async def test_lock_that_never_shows_up_times_out_after_four_cycles_with_one_write() -> None:
+    rig = Rig(LOCK_RIG)
+    rig.backend.ignore_writes = True
+    snapshot = await rig.cycle()
+    _submit_lock(rig, 1, 4, True, snapshot)
+    for _ in range(3):
+        rig.clock.now += 60
+        await rig.cycle()
+        record = rig.queue.latest(1, 4, CommandKind.LOCK)
+        assert record is not None and record.status is CommandStatus.SENT
+    rig.clock.now += 60
+    await rig.cycle()
+    record = rig.queue.latest(1, 4, CommandKind.LOCK)
+    assert record is not None and record.status is CommandStatus.TIMEOUT
+    assert len(rig.backend.writes) == 1
+
+
+@pytest.mark.parametrize("address", [4127, 4128, 4129, 4604, 4655, 4663])
+async def test_transport_refuses_any_coil_but_the_lock_coils(address: int) -> None:
+    rig = Rig(LOCK_RIG)
+    with pytest.raises(WtcRequestRejectedError):
+        await rig.transport.write_lock_coil(1, address, True)
+    assert rig.backend.writes == [] and rig.backend.records == []

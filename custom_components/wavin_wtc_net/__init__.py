@@ -23,6 +23,7 @@ from .commands import CommandExecutor, CommandPermissions, CommandQueue
 from .const import (
     COMMAND_TTL_FACTOR,
     CONF_GATEWAY_ID,
+    CONF_LOCK_ZONES,
     CONF_MAX_GAP,
     CONF_POLL_INTERVAL,
     CONF_UNITS,
@@ -36,7 +37,12 @@ from .runtime import build_client
 from .transport import AsyncioClock, GatewayTransport
 from .write_transport import WritableGatewayTransport
 
-PLATFORMS: list[Platform] = [Platform.CLIMATE, Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS: list[Platform] = [
+    Platform.CLIMATE,
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.LOCK,
+]
 
 
 @dataclass(slots=True)
@@ -56,19 +62,27 @@ def zone_device_id(gateway_id: str, unit_id: int, zone: int) -> tuple[str, str]:
     return (DOMAIN, f"{gateway_id}_u{unit_id}_z{zone}")
 
 
-def permissions_from_options(options: Mapping[str, Any]) -> CommandPermissions:
+def _parse_zones(items: Any) -> frozenset[tuple[int, int]]:
     zones: set[tuple[int, int]] = set()
-    for item in options.get(CONF_WRITABLE_ZONES, []):
+    for item in items or []:
         unit_text, _, zone_text = str(item).partition(":")
         if unit_text.isdigit() and zone_text.isdigit():
             zones.add((int(unit_text), int(zone_text)))
-    return CommandPermissions(bool(options.get(CONF_WRITE_ENABLED, False)), frozenset(zones))
+    return frozenset(zones)
+
+
+def permissions_from_options(options: Mapping[str, Any]) -> CommandPermissions:
+    return CommandPermissions(
+        bool(options.get(CONF_WRITE_ENABLED, False)),
+        _parse_zones(options.get(CONF_WRITABLE_ZONES)),
+        _parse_zones(options.get(CONF_LOCK_ZONES)),
+    )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: WtcConfigEntry) -> bool:
     units = {int(unit): int(zones) for unit, zones in entry.data[CONF_UNITS].items()}
     permissions = permissions_from_options(entry.options)
-    writable = permissions.write_enabled and bool(permissions.zones)
+    writable = permissions.write_enabled and bool(permissions.zones or permissions.lock_zones)
     transport, client = build_client(
         entry.data[CONF_HOST],
         entry.data[CONF_PORT],

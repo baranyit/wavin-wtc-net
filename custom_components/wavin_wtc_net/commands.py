@@ -26,16 +26,19 @@ from dataclasses import dataclass, field
 from .errors import WtcError, WtcModbusExceptionError, WtcRequestRejectedError, WtcTransportError
 from .models import GatewaySnapshot, ZoneSnapshot
 from .polarity import COMFORT, COOLING, ON_OFF_ON
-from .protocol import WheelCalibration, zone_wheel_code_register
+from .protocol import WheelCalibration, zone_lock_command_coil, zone_wheel_code_register
 from .transport import Clock
 from .write_transport import WritableGatewayTransport
 
 DEFAULT_VERIFY_CYCLES = 2
+#: The lock status lags the command by an unknown delay, so it gets more verification cycles.
+LOCK_VERIFY_CYCLES = 4
 HISTORY_SIZE = 20
 
 
 class CommandKind(enum.Enum):
     WHEEL_TARGET = "wheel_target"
+    LOCK = "lock"
 
 
 class CommandStatus(enum.Enum):
@@ -80,10 +83,19 @@ class CommandPermissions:
     """Write mode is off by default. Zones are separate opt-ins ``(unit_id, zone)``."""
 
     write_enabled: bool = False
-    zones: frozenset[tuple[int, int]] = frozenset()
+    zones: frozenset[tuple[int, int]] = frozenset()  # wheel target writes
+    lock_zones: frozenset[tuple[int, int]] = frozenset()  # lock writes, a separate opt-in
 
     def allows(self, unit_id: int, zone: int) -> bool:
         return self.write_enabled and (unit_id, zone) in self.zones
+
+    def allows_lock(self, unit_id: int, zone: int) -> bool:
+        return self.write_enabled and (unit_id, zone) in self.lock_zones
+
+    def allows_kind(self, kind: CommandKind, unit_id: int, zone: int) -> bool:
+        if kind is CommandKind.LOCK:
+            return self.allows_lock(unit_id, zone)
+        return self.allows(unit_id, zone)
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,28 +106,40 @@ class CommandKey:
 
 
 @dataclass(frozen=True, slots=True)
-class WheelCommand:
+class Command:
+    """One explicit user command: a wheel code (0..12) or a lock state (0/1)."""
+
     command_id: int
+    kind: CommandKind
     unit_id: int
     zone: int
-    target: float
-    raw_code: int
+    target: float | bool  # the user's request: a temperature, or True = locked
+    raw_value: int  # the one raw value that is written
     generation: int  # transport connection generation when it was created
     created_at: float
     expires_at: float
 
     @property
     def key(self) -> CommandKey:
-        return CommandKey(self.unit_id, self.zone, CommandKind.WHEEL_TARGET)
+        return CommandKey(self.unit_id, self.zone, self.kind)
 
     @property
-    def register(self) -> int:
+    def address(self) -> int:
+        if self.kind is CommandKind.LOCK:
+            return zone_lock_command_coil(self.zone)
         return zone_wheel_code_register(self.zone)
+
+    @property
+    def raw_code(self) -> int:
+        return self.raw_value
+
+
+WheelCommand = Command  # kept for readability where only wheel commands are meant
 
 
 @dataclass(frozen=True, slots=True)
 class CommandRecord:
-    command: WheelCommand
+    command: Command
     status: CommandStatus
     detail: str | None
     updated_at: float
@@ -155,6 +179,32 @@ def validate_wheel_target(
         raise CommandRejectedError(RejectReason.INVALID_TARGET, str(err)) from err
 
 
+def validate_lock_target(
+    *,
+    unit_id: int,
+    zone: int,
+    snapshot: GatewaySnapshot | None,
+    permissions: CommandPermissions,
+) -> None:
+    """Raise ``CommandRejectedError`` unless a lock command for this zone is allowed now."""
+    if not permissions.write_enabled:
+        raise CommandRejectedError(RejectReason.WRITE_DISABLED, "write mode is off")
+    if not permissions.allows_lock(unit_id, zone):
+        raise CommandRejectedError(
+            RejectReason.ZONE_NOT_PERMITTED, f"unit {unit_id} zone {zone} is not enabled for lock"
+        )
+    unit = snapshot.unit(unit_id) if snapshot else None
+    if unit is None:
+        raise CommandRejectedError(RejectReason.NO_DATA, "no snapshot for this unit yet")
+    if not unit.available:
+        raise CommandRejectedError(RejectReason.UNIT_UNAVAILABLE, "controller is unavailable")
+    state = unit.zone(zone)
+    if state is None or state.lock_status is None:
+        raise CommandRejectedError(RejectReason.NO_DATA, "lock status is not known")
+    if state.live is not True:
+        raise CommandRejectedError(RejectReason.ZONE_NOT_LIVE, "thermostat is not connected")
+
+
 def _check_zone_state(state: ZoneSnapshot) -> bool:
     """Raise unless the zone is on, live, in comfort and unambiguous; return True if cooling."""
     if state.live is not True:
@@ -187,9 +237,18 @@ def _pick(status: bool | None, control: bool | None) -> bool | None:
     return status if status is not None else control
 
 
+def _observed(command: Command, zone: ZoneSnapshot | None) -> int | None:
+    """The value to compare with ``command.raw_value`` in the read-back."""
+    if zone is None:
+        return None
+    if command.kind is CommandKind.LOCK:
+        return None if zone.lock_status is None else int(zone.lock_status)
+    return zone.wheel_code
+
+
 @dataclass(slots=True)
 class _Awaiting:
-    command: WheelCommand
+    command: Command
     cycles_left: int
 
 
@@ -201,21 +260,28 @@ class CommandQueue:
     ttl: float
     verify_cycles: int = DEFAULT_VERIFY_CYCLES
     _next_id: int = 1
-    _pending: dict[CommandKey, WheelCommand] = field(default_factory=dict)
+    _pending: dict[CommandKey, Command] = field(default_factory=dict)
     _awaiting: dict[CommandKey, _Awaiting] = field(default_factory=dict)
     _latest: dict[CommandKey, CommandRecord] = field(default_factory=dict)
     history: deque[CommandRecord] = field(default_factory=lambda: deque(maxlen=HISTORY_SIZE))
 
     def create(
-        self, unit_id: int, zone: int, target: float, raw_code: int, generation: int
-    ) -> WheelCommand:
+        self,
+        kind: CommandKind,
+        unit_id: int,
+        zone: int,
+        target: float | bool,
+        raw_value: int,
+        generation: int,
+    ) -> Command:
         now = self.clock.monotonic()
-        command = WheelCommand(
+        command = Command(
             command_id=self._next_id,
+            kind=kind,
             unit_id=unit_id,
             zone=zone,
             target=target,
-            raw_code=raw_code,
+            raw_value=raw_value,
             generation=generation,
             created_at=now,
             expires_at=now + self.ttl,
@@ -223,7 +289,7 @@ class CommandQueue:
         self._next_id += 1
         return command
 
-    def submit(self, command: WheelCommand) -> CommandRecord:
+    def submit(self, command: Command) -> CommandRecord:
         key = command.key
         old = self._pending.pop(key, None)
         if old is not None:
@@ -234,21 +300,22 @@ class CommandQueue:
         self._pending[key] = command
         return self._record(command, CommandStatus.QUEUED, None)
 
-    def take_pending(self) -> list[WheelCommand]:
+    def take_pending(self) -> list[Command]:
         """Freeze the pending set for this cycle (sorted for a deterministic order)."""
-        commands = sorted(self._pending.values(), key=lambda c: (c.unit_id, c.zone))
+        commands = sorted(self._pending.values(), key=lambda c: (c.unit_id, c.zone, c.kind.value))
         self._pending.clear()
         return commands
 
     def mark(
         self,
-        command: WheelCommand,
+        command: Command,
         status: CommandStatus,
         detail: str | None = None,
         observed_code: int | None = None,
     ) -> CommandRecord:
         if status is CommandStatus.SENT:
-            self._awaiting[command.key] = _Awaiting(command, self.verify_cycles)
+            cycles = LOCK_VERIFY_CYCLES if command.kind is CommandKind.LOCK else self.verify_cycles
+            self._awaiting[command.key] = _Awaiting(command, cycles)
         return self._record(command, status, detail, observed_code)
 
     def verify(self, snapshot: GatewaySnapshot) -> list[CommandRecord]:
@@ -257,8 +324,8 @@ class CommandQueue:
             command = waiting.command
             unit = snapshot.unit(command.unit_id)
             zone = unit.zone(command.zone) if unit and unit.available else None
-            observed = zone.wheel_code if zone else None
-            if observed == command.raw_code:
+            observed = _observed(command, zone)
+            if observed == command.raw_value:
                 del self._awaiting[key]
                 done.append(self._record(command, CommandStatus.CONFIRMED, None, observed))
                 continue
@@ -273,8 +340,10 @@ class CommandQueue:
                 done.append(self._record(command, CommandStatus.TIMEOUT, detail, observed))
         return done
 
-    def latest(self, unit_id: int, zone: int) -> CommandRecord | None:
-        return self._latest.get(CommandKey(unit_id, zone, CommandKind.WHEEL_TARGET))
+    def latest(
+        self, unit_id: int, zone: int, kind: CommandKind = CommandKind.WHEEL_TARGET
+    ) -> CommandRecord | None:
+        return self._latest.get(CommandKey(unit_id, zone, kind))
 
     @property
     def pending_count(self) -> int:
@@ -282,7 +351,7 @@ class CommandQueue:
 
     def _record(
         self,
-        command: WheelCommand,
+        command: Command,
         status: CommandStatus,
         detail: str | None,
         observed_code: int | None = None,
@@ -326,7 +395,7 @@ class CommandExecutor:
     def verify(self, snapshot: GatewaySnapshot) -> None:
         self._queue.verify(snapshot)
 
-    async def _send(self, command: WheelCommand) -> None:
+    async def _send(self, command: Command) -> None:
         queue = self._queue
         if self._clock.monotonic() >= command.expires_at:
             queue.mark(command, CommandStatus.TIMEOUT, RejectReason.EXPIRED.value)
@@ -335,13 +404,18 @@ class CommandExecutor:
         if not stats.connected or self._transport.connection_generation != command.generation:
             queue.mark(command, CommandStatus.TIMEOUT, RejectReason.CONNECTION_CHANGED.value)
             return
-        if not self._permissions.allows(command.unit_id, command.zone):
+        if not self._permissions.allows_kind(command.kind, command.unit_id, command.zone):
             queue.mark(command, CommandStatus.REJECTED, RejectReason.WRITE_DISABLED.value)
             return
         try:
-            await self._transport.write_wheel_code(
-                command.unit_id, command.register, command.raw_code
-            )
+            if command.kind is CommandKind.LOCK:
+                await self._transport.write_lock_coil(
+                    command.unit_id, command.address, bool(command.raw_value)
+                )
+            else:
+                await self._transport.write_wheel_code(
+                    command.unit_id, command.address, command.raw_value
+                )
         except WtcRequestRejectedError as err:
             queue.mark(command, CommandStatus.REJECTED, str(err))
         except WtcModbusExceptionError as err:
@@ -359,10 +433,11 @@ def records_summary(records: Iterable[CommandRecord]) -> list[dict[str, object]]
     return [
         {
             "id": r.command.command_id,
+            "kind": r.command.kind.value,
             "unit": r.command.unit_id,
             "zone": r.command.zone,
             "target": r.command.target,
-            "raw_code": r.command.raw_code,
+            "raw_value": r.command.raw_value,
             "status": r.status.value,
             "detail": r.detail,
             "observed_code": r.observed_code,
@@ -372,6 +447,7 @@ def records_summary(records: Iterable[CommandRecord]) -> list[dict[str, object]]
 
 
 __all__ = [
+    "Command",
     "CommandExecutor",
     "CommandKind",
     "CommandPermissions",
@@ -382,5 +458,6 @@ __all__ = [
     "RejectReason",
     "WheelCommand",
     "records_summary",
+    "validate_lock_target",
     "validate_wheel_target",
 ]

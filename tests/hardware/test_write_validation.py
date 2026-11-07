@@ -34,6 +34,7 @@ import pytest_socket
 
 from custom_components.wavin_wtc_net.commands import (
     CommandExecutor,
+    CommandKind,
     CommandPermissions,
     CommandQueue,
     CommandStatus,
@@ -135,7 +136,11 @@ async def test_one_zone_one_step_and_restore() -> None:
             permissions=permissions,
         )
         assert raw == code
-        queue.submit(queue.create(unit, zone, target, raw, transport.connection_generation))
+        queue.submit(
+            queue.create(
+                CommandKind.WHEEL_TARGET, unit, zone, target, raw, transport.connection_generation
+            )
+        )
 
     restored = False
     stepped = False

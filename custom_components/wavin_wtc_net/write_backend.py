@@ -1,4 +1,4 @@
-"""PyModbus adapter with the single register write used for wheel commands.
+"""PyModbus adapter with the single-item writes used by the command layer.
 
 Only constructed when write mode is enabled. Pure Python: no Home Assistant imports.
 """
@@ -11,13 +11,21 @@ from .errors import WtcModbusExceptionError
 from .pymodbus_backend import PymodbusBackend, _unit_keyword
 
 
-class PymodbusWheelBackend(PymodbusBackend):
+class PymodbusWriteBackend(PymodbusBackend):
     async def write_register(self, unit_id: int, address: int, value: int) -> None:
-        from pymodbus.exceptions import ModbusException
-
         if self._client is None:
             raise ConnectionError("not connected")
-        method = self._client.write_register
+        await self._write(self._client.write_register, unit_id, address, value)
+
+    async def write_coil(self, unit_id: int, address: int, value: bool) -> None:
+        if self._client is None:
+            raise ConnectionError("not connected")
+        await self._write(self._client.write_coil, unit_id, address, value)
+
+    @staticmethod
+    async def _write(method: Any, unit_id: int, address: int, value: Any) -> None:
+        from pymodbus.exceptions import ModbusException
+
         kwargs: dict[str, Any] = {_unit_keyword(method): unit_id}
         try:
             response = await method(address, value, **kwargs)

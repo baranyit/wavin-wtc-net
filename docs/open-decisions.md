@@ -281,7 +281,13 @@ that only Dolgozó was exercised on hardware.
 
 One-zone hardware test first (separate approval and zone choice, lock on / delayed status
 observation / lock off), then a lock entity with the same queue and read-back if the status and its
-delay are clear; otherwise lock stays read-only. Not built yet.
+delay are clear; otherwise lock stays read-only.
+
+**Built 2026-11-07 (code, mock and loopback tested; hardware test pending):** `CommandKind.LOCK`,
+separate `lock_zones` opt-in (a wheel zone is not a lock zone), single-coil write of 4656+(z-1) with
+FC05 through the same queue, read-back from the status coil 4186+ with 4 verification cycles (the
+lag is unknown), a `lock` entity only for lock zones, `tests/hardware/test_lock_validation.py`. The
+command coil itself is not read. The lock entity shows only the polled status.
 
 ## 14. Economy (decided 2026-11-07)
 
