@@ -16,7 +16,10 @@ testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-ra"
 asyncio_mode = "auto"
-markers = ["hardware: opt-in read-only validation against a real endpoint (never in CI)"]
+markers = [
+  "hardware: opt-in read-only validation against a real endpoint (never in CI)",
+  "hardware_write: opt-in hardware WRITE test, needs explicit maintainer approval (never in CI)",
+]
 
 [tool.ruff]
 target-version = "py313"
