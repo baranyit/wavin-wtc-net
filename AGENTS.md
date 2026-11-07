@@ -23,13 +23,14 @@ unless a user explicitly asked for it**.
   interval, `max_gap` 0..8, fallback split with per-connection exclusions (`docs/to-code.md`).
 - **Done – plan step 3 (code):** config/options/reconfigure flows, coordinator over `GatewayPoller`,
   read-only climate/sensor/binary_sensor entities, translations (en/hu), redacted diagnostics,
-  Repairs issue for excluded points, HA tests in `tests/ha` (CI: hassfest + HACS jobs added;
-  first CI run pending).
-- Not yet done: hassfest/HACS result, plan step 1 evidence freeze, plan step 4 hardware validation.
-- **Open decisions first:** work through `docs/open-decisions.md` with the maintainer, item by item,
-  before starting plan step 3. Each item needs a maintainer decision or action.
-- **Then: plan step 3, HA read-only integration** (config/options/reconfigure flows, coordinator
-  wrapping `GatewayPoller`, controller/zone entities, translations, diagnostics).
+  Repairs issue for excluded points, HA tests in `tests/ha`; CI (lint, pytest matrix, hassfest,
+  HACS) is green.
+- **Done – plan step 4 (read-only hardware validation):** first run 2026-11-07, see
+  `docs/hardware-validation-2026-11-07.md`. Open decisions 1-9 are decided. The wheel rule is
+  closed: comfort `neutral + (code - 6) x step` with configurable heat/cool neutral and step
+  (22/26 °C, 0.5/0.5 here), economy ignores the wheel. Cooling is accepted by rule, not measured.
+- Not yet done: plan step 1 evidence freeze, a cooling-season read-only run, plan step 5
+  (command layer) and everything after it.
 - Do not start later plan steps (writes, global controls) before the earlier gates pass.
 
 ## 3. Source of truth (`docs/`)
@@ -125,11 +126,13 @@ hardware test, whatever their label.
 **Wheel → target** (configurable, never hard-coded):
 
 ```
-target = active_reference(mode, preset) + (raw_code − center_code) × wheel_step
+comfort target = neutral(heat|cool) + (raw_code − 6) × step(heat|cool)
 ```
 
-Candidates: center 6, codes 0…12, step 0.5 °C (HomeGate, real install) **vs** 1 °C (Python ref).
-This is the **main open question**. Keep both formulas testable. Hardware validation decides.
+Closed 2026-11-07 (hardware dial checks, heating; cooling by maintainer rule): codes 0…12, centre 6,
+`neutral_heat`/`neutral_cool`/`wheel_step_heat`/`wheel_step_cool` are options (real install 22/26 °C,
+0.5/0.5). Economy ignores the wheel (heating target = economy setpoint register; economy cooling
+unavailable). The Python reference's 1 °C per code is rejected here, kept testable in code only.
 
 ## 7. Architecture and code layout
 
@@ -249,7 +252,8 @@ immediate MQTT-style writes.
 
 ## 13. Open questions (do not resolve by guessing)
 
-- Wheel scale: 0.5 °C (configurable) vs 1 °C per code.
+- Wheel scale is closed for this installation (see §6); other thermostat models/installations may differ, hence the options.
+- Economy cooling target (not covered by the comfort rule).
 - Setpoint ±1 °C compensation; 4178+/4700+ setpoint validity.
 - Packed wheel words 4600–4603 vs B+3 offset vs physical dial correlation.
 - Firmware/serial registers, so serial-based identity is not yet allowed.

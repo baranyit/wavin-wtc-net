@@ -4,9 +4,9 @@ One config entry represents one endpoint: name, host, port (502), timeout (5 s),
 
 Real installation profile (not universal defaults): endpoint `192.168.1.210:502`; unit 1 zones Konyha, Nappali, Balu, Gábor, Luca, Fürdő; unit 2 zones Garázs, Dolgozó, Háló, Zuhany; heating/cooling neutral 22/26 °C; wheel step 0.5 °C.
 
-Calibration fields: heat/cool comfort neutral; optional economy neutrals; wheel center (candidate 6), min/max code (candidate 0/12), °C/code; optional setpoint compensation disabled unless validated.
+Calibration options (implemented, defaults = the real profile): `neutral_heat` 22 °C, `neutral_cool` 26 °C, `wheel_step_heat` 0.5 °C and `wheel_step_cool` 0.5 °C per wheel position. Heating and cooling use the same rule with their own neutral and step. Wheel centre 6 and codes 0..12 are protocol constants in `WheelCalibration`. Economy targets do not use the wheel: economy heating is the economy setpoint register, economy cooling is unavailable until validated. There is no setpoint compensation.
 
-`target = active_reference(mode,preset) + (raw_code−center_code)×wheel_step`
+Comfort: `target = neutral(heat|cool) + (raw_code−6)×step(heat|cool)`. Economy: see below. The target is shown as the read-only sensor "Target temperature" (`zone_target_temperature` in `protocol.py`).
 
 If mode/preset is unknown, target is unavailable rather than guessed. A requested target must map exactly to a valid raw code within tolerance—never silently round away a half-step.
 

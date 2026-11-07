@@ -213,6 +213,12 @@ installation is in heating season. Cooling polarity stays as in decision 5. The 
 formula stays configurable and testable, but **no cooling target write is built** until a cooling
 read-only run confirms it. Revisit when the installation switches to cooling.
 
+**Update 2026-11-07 (same day, maintainer):** the cooling comfort target is closed by rule. It works
+exactly like heating with its own centre value: `neutral_cool + (code - 6) x wheel_step_cool`
+(this installation: heat 22, cool 26, both steps 0.5). The implementation is open: `neutral_heat`,
+`neutral_cool`, `wheel_step_heat` and `wheel_step_cool` are options (`WheelCalibration`). Economy
+cooling target stays unavailable (not covered by the rule). Writes remain off.
+
 ## 7. Lock in the MVP (decided 2026-11-07)
 
 Read only. The lock status (candidate 4186+) is shown, all zones are currently unlocked. Lock

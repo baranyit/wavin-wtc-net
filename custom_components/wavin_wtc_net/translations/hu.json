@@ -39,7 +39,11 @@
         "description": "Ennek a beállításnak a minimális lekérdezési ideje {minimum} mp. A legnagyobb áthidalt cím-rés módosítása haladó beállítás: csak azt változtatja, hogyan hidalja át a használaton kívüli címeket, írni sosem ír (egyáltalán nincs írás).",
         "data": {
           "poll_interval": "Lekérdezési idő (mp)",
-          "max_gap": "Olvasásonként áthidalt legnagyobb címrés (0-8)"
+          "max_gap": "Olvasásonként áthidalt legnagyobb címrés (0-8)",
+          "neutral_heat": "Fűtési semleges hőmérséklet (°C), a tekerő középállása",
+          "neutral_cool": "Hűtési semleges hőmérséklet (°C), a tekerő középállása",
+          "wheel_step_heat": "Fűtési tekerőlépés (°C pozíciónként)",
+          "wheel_step_cool": "Hűtési tekerőlépés (°C pozíciónként)"
         }
       }
     },
@@ -126,6 +130,9 @@
       },
       "economy_cool_setpoint": {
         "name": "Takarék hűtési alapjel"
+      },
+      "target_temperature": {
+        "name": "Célhőmérséklet"
       }
     },
     "binary_sensor": {

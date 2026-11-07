@@ -14,11 +14,18 @@ from .client import DEFAULT_MAX_GAP, MAX_ALLOWED_GAP
 from .const import (
     CONF_GATEWAY_ID,
     CONF_MAX_GAP,
+    CONF_NEUTRAL_COOL,
+    CONF_NEUTRAL_HEAT,
     CONF_POLL_INTERVAL,
     CONF_UNITS,
+    CONF_WHEEL_STEP_COOL,
+    CONF_WHEEL_STEP_HEAT,
     DEFAULT_NAME,
+    DEFAULT_NEUTRAL_COOL,
+    DEFAULT_NEUTRAL_HEAT,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_PORT,
+    DEFAULT_WHEEL_STEP,
     DOMAIN,
     MAX_POLL_INTERVAL,
 )
@@ -90,6 +97,10 @@ class WtcConfigFlow(ConfigFlow, domain=DOMAIN):
                     options={
                         CONF_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
                         CONF_MAX_GAP: DEFAULT_MAX_GAP,
+                        CONF_NEUTRAL_HEAT: DEFAULT_NEUTRAL_HEAT,
+                        CONF_NEUTRAL_COOL: DEFAULT_NEUTRAL_COOL,
+                        CONF_WHEEL_STEP_HEAT: DEFAULT_WHEEL_STEP,
+                        CONF_WHEEL_STEP_COOL: DEFAULT_WHEEL_STEP,
                     },
                 )
             errors["base"] = error or "unknown"
@@ -166,6 +177,20 @@ class WtcOptionsFlow(OptionsFlowWithReload):
                 vol.Required(
                     CONF_MAX_GAP, default=current.get(CONF_MAX_GAP, DEFAULT_MAX_GAP)
                 ): vol.All(int, vol.Range(min=0, max=MAX_ALLOWED_GAP)),
+                vol.Required(
+                    CONF_NEUTRAL_HEAT, default=current.get(CONF_NEUTRAL_HEAT, DEFAULT_NEUTRAL_HEAT)
+                ): vol.All(vol.Coerce(float), vol.Range(min=5, max=35)),
+                vol.Required(
+                    CONF_NEUTRAL_COOL, default=current.get(CONF_NEUTRAL_COOL, DEFAULT_NEUTRAL_COOL)
+                ): vol.All(vol.Coerce(float), vol.Range(min=5, max=35)),
+                vol.Required(
+                    CONF_WHEEL_STEP_HEAT,
+                    default=current.get(CONF_WHEEL_STEP_HEAT, DEFAULT_WHEEL_STEP),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=2)),
+                vol.Required(
+                    CONF_WHEEL_STEP_COOL,
+                    default=current.get(CONF_WHEEL_STEP_COOL, DEFAULT_WHEEL_STEP),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=2)),
             }
         )
         return self.async_show_form(

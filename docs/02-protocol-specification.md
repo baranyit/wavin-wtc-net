@@ -30,8 +30,8 @@ Setpoints are reference-only: `4178+3×(z−1)` comfort cool, `+1` comfort heat,
 
 Candidate formulas:
 
-- HomeGate: `target=neutral(mode)+(code−6)×configured_step` (0.5 °C in the real profile).
-- Python: `offset=code−6` °C.
+- Chosen (hardware dial checks, heating): `target=neutral(heat|cool)+(code−6)×step(heat|cool)`, all four values configurable (real profile 22/26 °C, 0.5/0.5). Economy ignores the wheel.
+- Rejected for this installation: Python `offset=code−6` °C (1 °C per code); kept as a testable candidate in code only.
 
 No setpoint register may be rewritten by a read path.
 

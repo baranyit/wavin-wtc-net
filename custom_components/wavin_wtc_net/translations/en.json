@@ -39,7 +39,11 @@
         "description": "The minimum poll interval for this setup is {minimum} s. Changing the maximum gap is an advanced setting: it only changes how unused addresses are bridged, never what is written (nothing is).",
         "data": {
           "poll_interval": "Poll interval (s)",
-          "max_gap": "Maximum address gap bridged per read (0-8)"
+          "max_gap": "Maximum address gap bridged per read (0-8)",
+          "neutral_heat": "Heating neutral temperature (°C), wheel centre",
+          "neutral_cool": "Cooling neutral temperature (°C), wheel centre",
+          "wheel_step_heat": "Heating wheel step (°C per position)",
+          "wheel_step_cool": "Cooling wheel step (°C per position)"
         }
       }
     },
@@ -126,6 +130,9 @@
       },
       "economy_cool_setpoint": {
         "name": "Economy cooling setpoint"
+      },
+      "target_temperature": {
+        "name": "Target temperature"
       }
     },
     "binary_sensor": {
