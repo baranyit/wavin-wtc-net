@@ -55,6 +55,9 @@ unless a user explicitly asked for it**.
 | `docs/vendor-bms-v1_9.md` | Vendor BMS interface facts (first vendor evidence; re-grade confidence from it) |
 | `docs/open-decisions.md` | Open maintainer decisions after milestone 1; work through in order |
 | `docs/to-code.md` | Coding tasks already decided but not yet implemented |
+| `docs/supported-devices.md` | What was validated on hardware, per feature |
+| `docs/release-checklist.md` | Prepared (not executed) publication steps |
+| `docs/hardware-*-2026-11-0*.md` | Signed hardware reports (read, write, lock, mode) |
 
 Cite the relevant doc and section in PR descriptions when you implement or change a behaviour.
 

@@ -16,3 +16,4 @@ Main uncertainty: HomeGate models code 0–12 with configurable 0.5 °C steps, w
 
 First milestone: a read-only protocol core and mock Modbus environment for two units with 6+4 zones, passing prolonged polling/reconnect tests with zero writes.
 
+Publication documents: `../README.md`, `../CHANGELOG.md`, `supported-devices.md`, `release-checklist.md`.
