@@ -10,7 +10,13 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.climate import ClimateEntity
-from homeassistant.components.climate.const import ClimateEntityFeature, HVACAction, HVACMode
+from homeassistant.components.climate.const import (
+    PRESET_COMFORT,
+    PRESET_ECO,
+    ClimateEntityFeature,
+    HVACAction,
+    HVACMode,
+)
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -18,8 +24,8 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import WtcConfigEntry
 from .calibration import zone_effective_target
-from .commands import CommandRejectedError
-from .const import CONF_UNITS, COOLING, DOMAIN, ON_OFF_ON
+from .commands import CommandKind, CommandRejectedError
+from .const import COMFORT, CONF_UNITS, COOLING, DOMAIN, ON_OFF_ON
 from .entity import WtcEntity
 
 PARALLEL_UPDATES = 0
@@ -48,8 +54,68 @@ class WtcZoneClimate(WtcEntity, ClimateEntity):
         self._calibration = coordinator.calibration
         executor = coordinator.executor
         self._writable = executor is not None and executor.permissions.allows(unit_id, zone)
+        self._mode_writable = executor is not None and executor.permissions.allows_mode(
+            unit_id, zone
+        )
+        features = ClimateEntityFeature(0)
         if self._writable:
-            self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+            features |= ClimateEntityFeature.TARGET_TEMPERATURE
+        if self._mode_writable:
+            features |= (
+                ClimateEntityFeature.TURN_ON
+                | ClimateEntityFeature.TURN_OFF
+                | ClimateEntityFeature.PRESET_MODE
+            )
+            self._attr_preset_modes = [PRESET_COMFORT, PRESET_ECO]
+        self._attr_supported_features = features
+
+    @property
+    def preset_mode(self) -> str | None:
+        zone = self.zone_snapshot
+        if zone is None or not self._mode_writable:
+            return None
+        value = zone.comfort_economy
+        if value is None:
+            value = zone.control_comfort_economy
+        if value is None:
+            return None
+        return PRESET_COMFORT if value == COMFORT else PRESET_ECO
+
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        self._queue_mode(CommandKind.ZONE_PRESET, preset_mode == PRESET_COMFORT)
+
+    async def async_turn_on(self) -> None:
+        self._queue_mode(CommandKind.ZONE_POWER, True)
+
+    async def async_turn_off(self) -> None:
+        self._queue_mode(CommandKind.ZONE_POWER, False)
+
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        """Only off and on: heat/cool is never written (vendor: no effect per zone in slave)."""
+        if hvac_mode is HVACMode.OFF:
+            self._queue_mode(CommandKind.ZONE_POWER, False)
+        elif hvac_mode in (HVACMode.HEAT, HVACMode.COOL) and hvac_mode is self.hvac_mode:
+            return  # already in that mode
+        elif hvac_mode in (HVACMode.HEAT, HVACMode.COOL) and self.hvac_mode is HVACMode.OFF:
+            self._queue_mode(CommandKind.ZONE_POWER, True)
+        else:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="command_rejected",
+                translation_placeholders={"reason": "heat/cool cannot be changed from here"},
+            )
+
+    def _queue_mode(self, kind: CommandKind, value: bool) -> None:
+        if self._zone is None:
+            return
+        try:
+            self.coordinator.submit_zone_mode(self._unit_id, self._zone, kind, value)
+        except CommandRejectedError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="command_rejected",
+                translation_placeholders={"reason": str(err)},
+            ) from err
 
     @property
     def _cooling(self) -> bool:
@@ -79,15 +145,20 @@ class WtcZoneClimate(WtcEntity, ClimateEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         executor = self.coordinator.executor
-        if not self._writable or executor is None or self._zone is None:
+        if not (self._writable or self._mode_writable) or executor is None or self._zone is None:
             return None
-        record = executor.queue.latest(self._unit_id, self._zone)
-        if record is None:
+        records = [
+            executor.queue.latest(self._unit_id, self._zone, kind)
+            for kind in (CommandKind.WHEEL_TARGET, CommandKind.ZONE_POWER, CommandKind.ZONE_PRESET)
+        ]
+        latest = max((r for r in records if r), key=lambda r: r.updated_at, default=None)
+        if latest is None:
             return None
         return {
-            "last_command_target": record.command.target,
-            "last_command_status": record.status.value,
-            "last_command_detail": record.detail,
+            "last_command_kind": latest.command.kind.value,
+            "last_command_target": latest.command.target,
+            "last_command_status": latest.status.value,
+            "last_command_detail": latest.detail,
         }
 
     async def async_set_temperature(self, **kwargs: Any) -> None:

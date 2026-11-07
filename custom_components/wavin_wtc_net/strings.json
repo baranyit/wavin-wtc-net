@@ -46,7 +46,8 @@
           "wheel_step_cool": "Cooling wheel step (°C per position)",
           "write_enabled": "Enable writing (experimental, off by default)",
           "writable_zones": "Zones allowed to change their target",
-          "lock_zones": "Zones allowed to be locked/unlocked (separate opt-in)"
+          "lock_zones": "Zones allowed to be locked/unlocked (separate opt-in)",
+          "mode_zones": "Zones allowed to switch on/off and comfort/economy (separate opt-in)"
         }
       }
     },

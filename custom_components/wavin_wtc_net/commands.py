@@ -26,19 +26,28 @@ from dataclasses import dataclass, field
 from .errors import WtcError, WtcModbusExceptionError, WtcRequestRejectedError, WtcTransportError
 from .models import GatewaySnapshot, ZoneSnapshot
 from .polarity import COMFORT, COOLING, ON_OFF_ON
-from .protocol import WheelCalibration, zone_lock_command_coil, zone_wheel_code_register
+from .protocol import (
+    WheelCalibration,
+    zone_lock_command_coil,
+    zone_power_control_coil,
+    zone_preset_control_coil,
+    zone_wheel_code_register,
+)
 from .transport import Clock
 from .write_transport import WritableGatewayTransport
 
 DEFAULT_VERIFY_CYCLES = 2
 #: The lock status lags the command by an unknown delay, so it gets more verification cycles.
 LOCK_VERIFY_CYCLES = 4
+MODE_VERIFY_CYCLES = 3
 HISTORY_SIZE = 20
 
 
 class CommandKind(enum.Enum):
     WHEEL_TARGET = "wheel_target"
     LOCK = "lock"
+    ZONE_POWER = "zone_power"
+    ZONE_PRESET = "zone_preset"
 
 
 class CommandStatus(enum.Enum):
@@ -85,6 +94,7 @@ class CommandPermissions:
     write_enabled: bool = False
     zones: frozenset[tuple[int, int]] = frozenset()  # wheel target writes
     lock_zones: frozenset[tuple[int, int]] = frozenset()  # lock writes, a separate opt-in
+    mode_zones: frozenset[tuple[int, int]] = frozenset()  # zone on/off and preset, separate opt-in
 
     def allows(self, unit_id: int, zone: int) -> bool:
         return self.write_enabled and (unit_id, zone) in self.zones
@@ -92,9 +102,14 @@ class CommandPermissions:
     def allows_lock(self, unit_id: int, zone: int) -> bool:
         return self.write_enabled and (unit_id, zone) in self.lock_zones
 
+    def allows_mode(self, unit_id: int, zone: int) -> bool:
+        return self.write_enabled and (unit_id, zone) in self.mode_zones
+
     def allows_kind(self, kind: CommandKind, unit_id: int, zone: int) -> bool:
         if kind is CommandKind.LOCK:
             return self.allows_lock(unit_id, zone)
+        if kind in (CommandKind.ZONE_POWER, CommandKind.ZONE_PRESET):
+            return self.allows_mode(unit_id, zone)
         return self.allows(unit_id, zone)
 
 
@@ -127,6 +142,10 @@ class Command:
     def address(self) -> int:
         if self.kind is CommandKind.LOCK:
             return zone_lock_command_coil(self.zone)
+        if self.kind is CommandKind.ZONE_POWER:
+            return zone_power_control_coil(self.zone)
+        if self.kind is CommandKind.ZONE_PRESET:
+            return zone_preset_control_coil(self.zone)
         return zone_wheel_code_register(self.zone)
 
     @property
@@ -205,6 +224,43 @@ def validate_lock_target(
         raise CommandRejectedError(RejectReason.ZONE_NOT_LIVE, "thermostat is not connected")
 
 
+def validate_zone_mode(
+    *,
+    unit_id: int,
+    zone: int,
+    kind: CommandKind,
+    snapshot: GatewaySnapshot | None,
+    permissions: CommandPermissions,
+) -> None:
+    """Raise unless a zone on/off or preset command is allowed now (no heat/cool, no global)."""
+    if kind not in (CommandKind.ZONE_POWER, CommandKind.ZONE_PRESET):
+        raise CommandRejectedError(RejectReason.INVALID_TARGET, f"{kind.value} is not a zone mode")
+    if not permissions.write_enabled:
+        raise CommandRejectedError(RejectReason.WRITE_DISABLED, "write mode is off")
+    if not permissions.allows_mode(unit_id, zone):
+        raise CommandRejectedError(
+            RejectReason.ZONE_NOT_PERMITTED, f"unit {unit_id} zone {zone} is not enabled for mode"
+        )
+    unit = snapshot.unit(unit_id) if snapshot else None
+    if unit is None:
+        raise CommandRejectedError(RejectReason.NO_DATA, "no snapshot for this unit yet")
+    if not unit.available:
+        raise CommandRejectedError(RejectReason.UNIT_UNAVAILABLE, "controller is unavailable")
+    state = unit.zone(zone)
+    if state is None:
+        raise CommandRejectedError(RejectReason.NO_DATA, "zone not in the snapshot")
+    if state.live is not True:
+        raise CommandRejectedError(RejectReason.ZONE_NOT_LIVE, "thermostat is not connected")
+    for status, control in (
+        (state.on_off, state.control_on_off),
+        (state.comfort_economy, state.control_comfort_economy),
+    ):
+        if status is not None and control is not None and status != control:
+            raise CommandRejectedError(
+                RejectReason.CONFLICTING_BITS, "zone status and control bits disagree"
+            )
+
+
 def _check_zone_state(state: ZoneSnapshot) -> bool:
     """Raise unless the zone is on, live, in comfort and unambiguous; return True if cooling."""
     if state.live is not True:
@@ -243,6 +299,16 @@ def _observed(command: Command, zone: ZoneSnapshot | None) -> int | None:
         return None
     if command.kind is CommandKind.LOCK:
         return None if zone.lock_status is None else int(zone.lock_status)
+    if command.kind is CommandKind.ZONE_POWER:
+        value = zone.on_off if zone.on_off is not None else zone.control_on_off
+        return None if value is None else int(value)
+    if command.kind is CommandKind.ZONE_PRESET:
+        value = (
+            zone.comfort_economy
+            if zone.comfort_economy is not None
+            else zone.control_comfort_economy
+        )
+        return None if value is None else int(value)
     return zone.wheel_code
 
 
@@ -314,7 +380,11 @@ class CommandQueue:
         observed_code: int | None = None,
     ) -> CommandRecord:
         if status is CommandStatus.SENT:
-            cycles = LOCK_VERIFY_CYCLES if command.kind is CommandKind.LOCK else self.verify_cycles
+            cycles = {
+                CommandKind.LOCK: LOCK_VERIFY_CYCLES,
+                CommandKind.ZONE_POWER: MODE_VERIFY_CYCLES,
+                CommandKind.ZONE_PRESET: MODE_VERIFY_CYCLES,
+            }.get(command.kind, self.verify_cycles)
             self._awaiting[command.key] = _Awaiting(command, cycles)
         return self._record(command, status, detail, observed_code)
 
@@ -412,6 +482,10 @@ class CommandExecutor:
                 await self._transport.write_lock_coil(
                     command.unit_id, command.address, bool(command.raw_value)
                 )
+            elif command.kind in (CommandKind.ZONE_POWER, CommandKind.ZONE_PRESET):
+                await self._transport.write_zone_mode_coil(
+                    command.unit_id, command.address, bool(command.raw_value)
+                )
             else:
                 await self._transport.write_wheel_code(
                     command.unit_id, command.address, command.raw_value
@@ -460,4 +534,5 @@ __all__ = [
     "records_summary",
     "validate_lock_target",
     "validate_wheel_target",
+    "validate_zone_mode",
 ]

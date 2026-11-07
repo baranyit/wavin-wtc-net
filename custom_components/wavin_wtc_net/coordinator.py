@@ -24,6 +24,7 @@ from .commands import (
     RejectReason,
     validate_lock_target,
     validate_wheel_target,
+    validate_zone_mode,
 )
 from .const import DOMAIN
 from .models import GatewaySnapshot
@@ -125,6 +126,27 @@ class WtcCoordinator(DataUpdateCoordinator[GatewaySnapshot]):
         )
         command = executor.queue.create(
             CommandKind.LOCK, unit_id, zone, locked, int(locked), executor.connection_generation
+        )
+        record = executor.queue.submit(command)
+        self.async_update_listeners()
+        return record
+
+    def submit_zone_mode(
+        self, unit_id: int, zone: int, kind: CommandKind, value: bool
+    ) -> CommandRecord:
+        """Queue a zone on/off (``ZONE_POWER``) or comfort/economy (``ZONE_PRESET``) change."""
+        executor = self.executor
+        if executor is None:
+            raise CommandRejectedError(RejectReason.WRITE_DISABLED, "write mode is off")
+        validate_zone_mode(
+            unit_id=unit_id,
+            zone=zone,
+            kind=kind,
+            snapshot=self.data,
+            permissions=executor.permissions,
+        )
+        command = executor.queue.create(
+            kind, unit_id, zone, value, int(value), executor.connection_generation
         )
         record = executor.queue.submit(command)
         self.async_update_listeners()

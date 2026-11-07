@@ -25,6 +25,7 @@ from .const import (
     CONF_GATEWAY_ID,
     CONF_LOCK_ZONES,
     CONF_MAX_GAP,
+    CONF_MODE_ZONES,
     CONF_POLL_INTERVAL,
     CONF_UNITS,
     CONF_WRITABLE_ZONES,
@@ -76,13 +77,16 @@ def permissions_from_options(options: Mapping[str, Any]) -> CommandPermissions:
         bool(options.get(CONF_WRITE_ENABLED, False)),
         _parse_zones(options.get(CONF_WRITABLE_ZONES)),
         _parse_zones(options.get(CONF_LOCK_ZONES)),
+        _parse_zones(options.get(CONF_MODE_ZONES)),
     )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: WtcConfigEntry) -> bool:
     units = {int(unit): int(zones) for unit, zones in entry.data[CONF_UNITS].items()}
     permissions = permissions_from_options(entry.options)
-    writable = permissions.write_enabled and bool(permissions.zones or permissions.lock_zones)
+    writable = permissions.write_enabled and bool(
+        permissions.zones or permissions.lock_zones or permissions.mode_zones
+    )
     transport, client = build_client(
         entry.data[CONF_HOST],
         entry.data[CONF_PORT],

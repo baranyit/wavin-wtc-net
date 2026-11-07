@@ -297,3 +297,31 @@ status address 4186+ confirmed. Lock writes are accepted for the MVP.
 
 Stays read-only. The economy heating target is shown, the integration does not set it.
 Economy setpoint writes (4178+3(z-1)+2) and economy cooling are not built.
+
+## 15. Global controls and BMS keepalive (decided 2026-11-07)
+
+Out of the MVP. Global coils 4127-4129 and any keepalive are not written; they stay readable
+(global bits appear in diagnostics). A later decision, with its own permission tier and a
+system-wide hardware test, can reopen them (cooling season for 4129).
+
+## 16. Zone on/off and comfort/economy (decided 2026-11-07, plan step 6 first half)
+
+Built: `CommandKind.ZONE_POWER` and `ZONE_PRESET` write the zone control coils at offsets 0 (on/off)
+and 1 (comfort/economy) of 4604+8(z-1) through the same queue and read-back (status coils 4 and 5,
+3 verification cycles), under a separate `mode_zones` opt-in. The zone heat/cool coil (offset 2)
+and all global coils are not writable by the transport (the vendor says the per-zone heat/cool has
+no effect in slave mode). HA: climate `turn_on` / `turn_off`, `set_hvac_mode` (off, or the
+current mode while off, never a heat/cool change) and `set_preset_mode` (comfort/eco) for mode
+zones. The effect may depend on the Configurator settings (vendor), so a one-zone hardware test
+(`tests/hardware/test_mode_validation.py`, per kind, separate approval) is still required before
+the feature counts as validated.
+
+## 17. Identity (decided 2026-11-07)
+
+Stays the generated gateway ID + unit + zone. The serial (4501-4502) is shown in device info and
+diagnostics only; it is not used for identification.
+
+## 18. Publication (decided 2026-11-07)
+
+Not yet. First the remaining open points (zone mode hardware test, cooling-season read-only run,
+termostat behaviour while locked); then plan step 7 (README, supported-device matrix, release).

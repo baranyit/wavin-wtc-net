@@ -16,6 +16,7 @@ from .const import (
     CONF_GATEWAY_ID,
     CONF_LOCK_ZONES,
     CONF_MAX_GAP,
+    CONF_MODE_ZONES,
     CONF_NEUTRAL_COOL,
     CONF_NEUTRAL_HEAT,
     CONF_POLL_INTERVAL,
@@ -108,6 +109,7 @@ class WtcConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_WRITE_ENABLED: False,
                         CONF_WRITABLE_ZONES: [],
                         CONF_LOCK_ZONES: [],
+                        CONF_MODE_ZONES: [],
                     },
                 )
             errors["base"] = error or "unknown"
@@ -176,6 +178,7 @@ class WtcOptionsFlow(OptionsFlowWithReload):
                 user_input[CONF_WRITE_ENABLED]
                 and not user_input[CONF_WRITABLE_ZONES]
                 and not user_input[CONF_LOCK_ZONES]
+                and not user_input[CONF_MODE_ZONES]
             ):
                 errors[CONF_WRITABLE_ZONES] = "no_zone_selected"
             else:
@@ -217,6 +220,9 @@ class WtcOptionsFlow(OptionsFlowWithReload):
                 ): cv.multi_select(zone_choices),
                 vol.Required(
                     CONF_LOCK_ZONES, default=current.get(CONF_LOCK_ZONES, [])
+                ): cv.multi_select(zone_choices),
+                vol.Required(
+                    CONF_MODE_ZONES, default=current.get(CONF_MODE_ZONES, [])
                 ): cv.multi_select(zone_choices),
             }
         )

@@ -46,7 +46,8 @@
           "wheel_step_cool": "Hűtési tekerőlépés (°C pozíciónként)",
           "write_enabled": "Írás engedélyezése (kísérleti, alapból kikapcsolva)",
           "writable_zones": "Zónák, amelyek célhőmérséklete módosítható",
-          "lock_zones": "Zónák, amelyek zárolhatók/feloldhatók (külön engedély)"
+          "lock_zones": "Zónák, amelyek zárolhatók/feloldhatók (külön engedély)",
+          "mode_zones": "Zónák, amelyek ki/be kapcsolhatók és comfort/economy váltható (külön engedély)"
         }
       }
     },

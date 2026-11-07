@@ -205,6 +205,7 @@ async def test_user_flow_creates_entry_with_generated_gateway_id(
         "write_enabled": False,
         "writable_zones": [],
         "lock_zones": [],
+        "mode_zones": [],
     }
 
 
@@ -471,3 +472,51 @@ async def test_no_lock_entities_when_writing_is_off(
 ) -> None:
     await _setup(hass, mock_entry)
     assert hass.states.async_entity_ids("lock") == []
+
+
+async def test_preset_and_power_are_queued_for_mode_zones_only(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    mock_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_entry,
+        options={**mock_entry.options, "write_enabled": True, "mode_zones": ["2:2"]},
+    )
+    assert await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done()
+    entity_id = _climate_id(hass, 2, 2)
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.attributes["preset_mode"] == "comfort"
+    other = hass.states.get(_climate_id(hass, 2, 3))
+    assert other is not None and "preset_modes" not in other.attributes
+
+    before = len(mock_device.records)
+    await hass.services.async_call(
+        "climate", "set_preset_mode", {"entity_id": entity_id, "preset_mode": "eco"}, blocking=True
+    )
+    assert len(mock_device.records) == before and mock_device.writes == []
+    assert hass.states.get(entity_id).attributes["preset_mode"] == "comfort"  # type: ignore[union-attr]
+    await mock_entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert mock_device.writes == [("write_coil", 2, 4613, False)]
+    assert hass.states.get(entity_id).attributes["preset_mode"] == "eco"  # type: ignore[union-attr]
+
+    await hass.services.async_call("climate", "turn_off", {"entity_id": entity_id}, blocking=True)
+    await mock_entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert mock_device.writes[-1] == ("write_coil", 2, 4612, False)
+    assert hass.states.get(entity_id).state == "off"  # type: ignore[union-attr]
+    await hass.services.async_call(
+        "climate", "set_hvac_mode", {"entity_id": entity_id, "hvac_mode": "heat"}, blocking=True
+    )
+    await mock_entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert mock_device.writes[-1] == ("write_coil", 2, 4612, True)
+    assert hass.states.get(entity_id).state == "heat"  # type: ignore[union-attr]
+    with pytest.raises(ServiceValidationError):  # heat/cool itself is never written
+        await hass.services.async_call(
+            "climate", "set_hvac_mode", {"entity_id": entity_id, "hvac_mode": "cool"}, blocking=True
+        )
+    heat_cool_addresses = {4614}  # zone 2 heat/cool control coil
+    assert not [w for w in mock_device.writes if w[2] in heat_cool_addresses | {4127, 4128, 4129}]

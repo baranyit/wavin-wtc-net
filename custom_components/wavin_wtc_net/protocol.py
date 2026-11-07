@@ -122,6 +122,14 @@ def zone_control_coil_base(zone: int) -> int:
     return COIL_ZONE_CONTROL_BASE + COIL_ZONE_CONTROL_STRIDE * (validate_zone(zone) - 1)
 
 
+def zone_power_control_coil(zone: int) -> int:
+    return zone_control_coil_base(zone)
+
+
+def zone_preset_control_coil(zone: int) -> int:
+    return zone_control_coil_base(zone) + 1
+
+
 def zone_lock_command_coil(zone: int) -> int:
     return COIL_LOCK_COMMAND_BASE + validate_zone(zone) - 1
 

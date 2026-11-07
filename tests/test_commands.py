@@ -18,6 +18,7 @@ from custom_components.wavin_wtc_net.commands import (
     RejectReason,
     validate_lock_target,
     validate_wheel_target,
+    validate_zone_mode,
 )
 from custom_components.wavin_wtc_net.errors import WtcRequestRejectedError
 from custom_components.wavin_wtc_net.models import GatewaySnapshot
@@ -546,4 +547,100 @@ async def test_transport_refuses_any_coil_but_the_lock_coils(address: int) -> No
     rig = Rig(LOCK_RIG)
     with pytest.raises(WtcRequestRejectedError):
         await rig.transport.write_lock_coil(1, address, True)
+    assert rig.backend.writes == [] and rig.backend.records == []
+
+
+# -- zone on/off and preset (decision 16): separate opt-in, control coils 0 and 1 only ----------
+
+MODE_RIG = CommandPermissions(True, frozenset(), frozenset(), frozenset({(2, 2)}))
+POWER = CommandKind.ZONE_POWER
+PRESET = CommandKind.ZONE_PRESET
+
+
+def _submit_mode(rig: Rig, kind: CommandKind, value: bool, snapshot: GatewaySnapshot) -> None:
+    validate_zone_mode(unit_id=2, zone=2, kind=kind, snapshot=snapshot, permissions=rig.permissions)
+    rig.queue.submit(
+        rig.queue.create(kind, 2, 2, value, int(value), rig.transport.connection_generation)
+    )
+
+
+@pytest.mark.parametrize(("kind", "coil_offset"), [(POWER, 0), (PRESET, 1)])
+async def test_zone_mode_writes_one_control_coil_before_the_reads_and_confirms(
+    kind: CommandKind, coil_offset: int
+) -> None:
+    rig = Rig(MODE_RIG)
+    snapshot = await rig.cycle()
+    rig.clock.now += 60
+    before = len(rig.backend.records)
+    _submit_mode(rig, kind, False, snapshot)
+    assert len(rig.backend.records) == before and rig.backend.writes == []
+    after = await rig.cycle()
+    cycle_ops = rig.backend.records[before:]
+    assert cycle_ops[0].op == "write_coil" and all(r.op != "write_coil" for r in cycle_ops[1:])
+    address = p.zone_control_coil_base(2) + coil_offset
+    assert rig.backend.writes == [("write_coil", 2, address, False)]
+    zone = after.unit(2).zone(2)  # type: ignore[union-attr]
+    assert zone is not None
+    assert (zone.on_off if kind is POWER else zone.comfort_economy) is False
+    record = rig.queue.latest(2, 2, kind)
+    assert record is not None and record.status is CommandStatus.CONFIRMED
+
+
+async def test_zone_mode_permission_is_separate_from_wheel_and_lock() -> None:
+    snapshot = await Rig().cycle()
+    for permissions in (ALLOW_2_2, LOCK_RIG, CommandPermissions(True, frozenset({(2, 2)}))):
+        with pytest.raises(CommandRejectedError) as err:
+            validate_zone_mode(
+                unit_id=2, zone=2, kind=POWER, snapshot=snapshot, permissions=permissions
+            )
+        assert err.value.reason is RejectReason.ZONE_NOT_PERMITTED
+    off = CommandPermissions(False, frozenset(), frozenset(), frozenset({(2, 2)}))
+    with pytest.raises(CommandRejectedError) as off_err:
+        validate_zone_mode(unit_id=2, zone=2, kind=POWER, snapshot=snapshot, permissions=off)
+    assert off_err.value.reason is RejectReason.WRITE_DISABLED
+
+
+async def test_zone_mode_is_blocked_when_status_and_control_disagree_or_zone_not_live() -> None:
+    rig = Rig(MODE_RIG)
+    snapshot = await rig.cycle()
+    for changes, reason in (
+        ({"on_off": True, "control_on_off": False}, RejectReason.CONFLICTING_BITS),
+        ({"live": False}, RejectReason.ZONE_NOT_LIVE),
+    ):
+        with pytest.raises(CommandRejectedError) as err:
+            validate_zone_mode(
+                unit_id=2,
+                zone=2,
+                kind=PRESET,
+                snapshot=_with_zone(snapshot, 2, 2, **changes),
+                permissions=MODE_RIG,
+            )
+        assert err.value.reason is reason
+
+
+async def test_zone_mode_that_never_shows_up_times_out_after_three_cycles_with_one_write() -> None:
+    rig = Rig(MODE_RIG)
+    rig.backend.ignore_writes = True
+    snapshot = await rig.cycle()
+    _submit_mode(rig, POWER, False, snapshot)
+    for _ in range(2):
+        rig.clock.now += 60
+        await rig.cycle()
+        record = rig.queue.latest(2, 2, POWER)
+        assert record is not None and record.status is CommandStatus.SENT
+    rig.clock.now += 60
+    await rig.cycle()
+    record = rig.queue.latest(2, 2, POWER)
+    assert record is not None and record.status is CommandStatus.TIMEOUT
+    assert len(rig.backend.writes) == 1
+
+
+@pytest.mark.parametrize("offset", [2, 3, 4, 5, 6, 7])
+async def test_transport_refuses_the_heat_cool_and_other_zone_control_coils(offset: int) -> None:
+    rig = Rig(MODE_RIG)
+    with pytest.raises(WtcRequestRejectedError):
+        await rig.transport.write_zone_mode_coil(2, p.zone_control_coil_base(2) + offset, True)
+    for address in (4127, 4128, 4129):
+        with pytest.raises(WtcRequestRejectedError):
+            await rig.transport.write_zone_mode_coil(2, address, True)
     assert rig.backend.writes == [] and rig.backend.records == []
