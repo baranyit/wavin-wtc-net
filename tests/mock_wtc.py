@@ -241,6 +241,11 @@ class MockWtcBackend:
                 raise p_exception(GATEWAY_TARGET_FAILED)
             unit = self.units[unit_id]
             unit.coils[address] = value
+            for zone_number in unit.zones:
+                control = p.zone_control_coil_base(zone_number)
+                if not self.ignore_writes and address in (control, control + 1):
+                    # the status coil mirrors the control coil (vendor doc, hardware run)
+                    unit.coils[p.zone_status_coil_base(zone_number) + 4 + address - control] = value
             zone = address - p.COIL_LOCK_COMMAND_BASE + 1
             if not self.ignore_writes and 1 <= zone <= p.MAX_ZONES:
                 # The lock status coil follows the command after `lock_delay` seconds.

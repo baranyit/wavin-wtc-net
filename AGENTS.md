@@ -160,8 +160,9 @@ custom_components/wavin_wtc_net/
   polarity.py ✓   fixed bit polarity (single source for core and HA layer)
   commands.py ✓   permissions, validation, coalescing queue, expiry, read-back verification
   write_transport.py, write_backend.py ✓  the ONLY write route: one wheel register (4604..4610,
-                  codes 0..12, FC06) or one zone lock coil (4656..4662, FC05), a transport
-                  subclass built only when write mode is on
+                  codes 0..12, FC06), one zone lock coil (4656..4662, FC05) or one zone on/off or
+                  comfort/economy control coil (offsets 0 and 1, FC05), a transport subclass
+                  built only when write mode is on
   # coordinator command phase: poller hook before_reads (send queue) → reads → on_snapshot (verify)
 tests/
 ```
