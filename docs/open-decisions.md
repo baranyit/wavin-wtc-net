@@ -184,7 +184,7 @@ HA climate entity (plan step 3) needs to know e.g. whether `heat_cool = True` me
 stays off.
 
 **Maintainer input needed.** Current physical state of the installation (mode, preset, which zones
-are on). Approval for a read-only integration test run against `192.168.1.204:502`.
+are on). Approval for a read-only integration test run against `192.168.1.210:502`.
 
 **Evidence.** Two independent sources agree, so polarity is no longer unknown:
 - Vendor document (`docs/vendor-bms-v1_9.md`): ON/OFF on = 1, C/E comfort = 1, H/C cooling = 1,

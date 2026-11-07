@@ -2,7 +2,7 @@
 
 Run only with explicit maintainer approval, one run at a time, write mode off:
 
-    WTC_HARDWARE_HOST=192.168.1.204 WTC_HARDWARE_UNITS="1:6,2:4" \\
+    WTC_HARDWARE_HOST=192.168.1.210 WTC_HARDWARE_UNITS="1:6,2:4" \\
         python -m pytest tests/hardware -m hardware -s
 
 Everything goes through the integration's own ``PymodbusBackend`` + ``GatewayTransport`` +
@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import pytest_socket
 
 from custom_components.wavin_wtc_net.models import GatewaySnapshot
 from custom_components.wavin_wtc_net.runtime import build_client
@@ -106,6 +107,7 @@ def _write_report(report: dict[str, Any]) -> Path:
 
 async def test_read_only_validation_report() -> None:
     assert HOST is not None
+    pytest_socket.socket_allow_hosts([HOST], allow_unix_socket=True)  # only the approved endpoint
     units = parse_units(os.environ.get("WTC_HARDWARE_UNITS", "1:6,2:4"))
     port = int(os.environ.get("WTC_HARDWARE_PORT", "502"))
     cycles = int(os.environ.get("WTC_CYCLES", "2"))
@@ -150,6 +152,7 @@ async def test_read_only_validation_report() -> None:
     print(f"\nreport: {path}")
 
     # Read-only by construction; this only guards the contract (rate, caps are in the transport).
+    assert any(u["available"] for u in snapshots[0]["units"]), "no unit was reachable"
     assert stats.requests_started <= client.first_cycle_requests + cycles * (
         client.requests_per_cycle * 3
     )

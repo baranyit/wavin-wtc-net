@@ -2,7 +2,7 @@
 
 One config entry represents one endpoint: name, host, port (502), timeout (5 s), advanced address offset (0), controller unit IDs and write mode (off). Each controller stores enabled zone channels/names plus calibration, with optional zone overrides.
 
-Real installation profile (not universal defaults): endpoint `192.168.1.204:502`; unit 1 zones Konyha, Nappali, Balu, Gábor, Luca, Fürdő; unit 2 zones Garázs, Dolgozó, Háló, Zuhany; heating/cooling neutral 22/26 °C; wheel step 0.5 °C.
+Real installation profile (not universal defaults): endpoint `192.168.1.210:502`; unit 1 zones Konyha, Nappali, Balu, Gábor, Luca, Fürdő; unit 2 zones Garázs, Dolgozó, Háló, Zuhany; heating/cooling neutral 22/26 °C; wheel step 0.5 °C.
 
 Calibration fields: heat/cool comfort neutral; optional economy neutrals; wheel center (candidate 6), min/max code (candidate 0/12), °C/code; optional setpoint compensation disabled unless validated.
 
