@@ -268,7 +268,7 @@ immediate MQTT-style writes.
 - Setpoint ±1 °C compensation; 4178+/4700+ setpoint validity.
 - Packed wheel words 4600–4603 vs B+3 offset vs physical dial correlation.
 - Firmware/serial registers, so serial-based identity is not yet allowed.
-- Lock delay and authoritative lock status address.
+- Lock delay: shorter than one cycle on Dolgozó; the status address 4186+ is confirmed there.
 - Global vs zone bit precedence. Decision 10: master bits are ignored for the wheel command (real install runs zones in comfort while the master bit is economy); only a zone's own status vs control bit disagreement blocks a target write.
 - BMS timeout, reset semantics and safe value.
 - Unit-ID semantics on real hardware (keys 1/2 → Modbus unit IDs is evidenced only in HomeGate code).

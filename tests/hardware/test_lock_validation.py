@@ -8,11 +8,12 @@ Needs a separate maintainer approval for ONE zone (AGENTS.md section 10). Run wi
 Sequence, all through the integration's own writable transport, queue and poller:
 
 1. read-only precondition cycle; abort without writing unless the zone is live and unlocked;
-2. queue "lock", then observe up to ``WTC_LOCK_CYCLES`` cycles (default 6) until the status coil
+2. queue "lock", then observe up to ``WTC_LOCK_CYCLES`` cycles (default 4) until the status coil
    (candidate 4186+) shows locked: this measures the status lag in poll-interval resolution;
 3. queue "unlock", observe until the status shows unlocked;
 4. always end unlocked: if still locked, one more unlock is queued.
 
+Cycles run on the poll grid (start to start = the poll interval, not interval after finish).
 At most 3 writes (lock, unlock, one emergency unlock). The human watches the thermostat.
 """
 
@@ -70,7 +71,7 @@ async def test_lock_one_zone_and_unlock() -> None:
     unit, zone = (int(x) for x in APPROVAL.split(":"))
     units = parse_units(os.environ.get("WTC_HARDWARE_UNITS", "1:6,2:4"))
     port = int(os.environ.get("WTC_HARDWARE_PORT", "502"))
-    max_cycles = int(os.environ.get("WTC_LOCK_CYCLES", "6"))
+    max_cycles = int(os.environ.get("WTC_LOCK_CYCLES", "4"))
 
     transport, client = build_client(HOST, port, units, writable=True)
     assert isinstance(transport, WritableGatewayTransport)
@@ -83,6 +84,13 @@ async def test_lock_one_zone_and_unlock() -> None:
     )
     log: list[dict[str, Any]] = []
     t0 = time.time()
+    next_at = t0
+
+    async def tick() -> None:
+        """Sleep until the next poll-grid tick (start to start = the poll interval)."""
+        nonlocal next_at
+        next_at += interval
+        await asyncio.sleep(max(0.0, next_at - time.time()))
 
     def status_of(snapshot: GatewaySnapshot) -> bool | None:
         return snapshot.unit(unit).zone(zone).lock_status  # type: ignore[union-attr]
@@ -103,6 +111,9 @@ async def test_lock_one_zone_and_unlock() -> None:
         return snapshot
 
     def queue_lock(snapshot: GatewaySnapshot, locked: bool) -> None:
+        print(
+            f"\nQUEUED_{'LOCK' if locked else 'UNLOCK'} at {time.strftime('%H:%M:%S')}", flush=True
+        )
         validate_lock_target(unit_id=unit, zone=zone, snapshot=snapshot, permissions=permissions)
         queue.submit(
             queue.create(
@@ -115,7 +126,7 @@ async def test_lock_one_zone_and_unlock() -> None:
         for n in range(1, max_cycles + 1):
             if status_of(snapshot) is want:
                 return snapshot, n - 1
-            await asyncio.sleep(interval)
+            await tick()
             snapshot = await cycle(f"{label} observe {n}")
         return snapshot, None
 
@@ -129,20 +140,20 @@ async def test_lock_one_zone_and_unlock() -> None:
         assert snapshot.unit(unit).zone(zone).live is True  # type: ignore[union-attr]
         queue_lock(snapshot, True)
         started = True
-        await asyncio.sleep(interval)
+        await tick()
         snapshot, locked_after_cycles = await wait_for(True, "1 lock")
         queue_lock(snapshot, False)
-        await asyncio.sleep(interval)
+        await tick()
         snapshot, unlocked_after_cycles = await wait_for(False, "2 unlock")
         final_unlocked = status_of(snapshot) is False
     finally:
         try:
             if started and not final_unlocked:
-                await asyncio.sleep(interval)
+                await tick()
                 snapshot = await cycle("3 pre-restore read")
                 if status_of(snapshot) is not False:
                     queue_lock(snapshot, False)
-                    await asyncio.sleep(interval)
+                    await tick()
                     snapshot, _ = await wait_for(False, "4 emergency unlock")
                 final_unlocked = status_of(snapshot) is False
         finally:

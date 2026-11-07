@@ -65,7 +65,7 @@ Writable zone base `C=4604+8×(z−1)`: on/off, comfort/economy, heat/cool. Home
 | zone control coil +2 (heat/cool) | yes, but no effect in slave mode; use 4129 | hw read | do not write |
 | global coils 4127–4129 | yes | hw read | |
 | coils 4120, 4121, 4125, 4126 | yes (outputs, emergency, sensor error) | hw read: all false | |
-| lock status 4186+, command 4656+ | yes (locked = 1) | hw read: all unlocked | delay untested |
+| lock status 4186+, command 4656+ | yes (locked = 1) | hw write: lock/unlock moved the status coil, confirmed in the same cycle (Dolgozó) | lag shorter than one cycle |
 
 ## Safety contract
 
