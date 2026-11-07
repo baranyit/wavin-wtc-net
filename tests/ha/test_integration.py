@@ -204,6 +204,7 @@ async def test_user_flow_creates_entry_with_generated_gateway_id(
         "wheel_step_cool": 0.5,
         "write_enabled": False,
         "writable_zones": [],
+        "lock_zones": [],
     }
 
 
@@ -433,3 +434,40 @@ async def test_options_require_a_zone_when_writing_is_enabled(
     )
     assert ok["type"] is FlowResultType.CREATE_ENTRY
     assert mock_device.writes == []  # configuring writing writes nothing
+
+
+async def test_lock_entities_only_for_lock_zones_and_changes_are_queued(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    mock_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_entry,
+        options={**mock_entry.options, "write_enabled": True, "lock_zones": ["1:4"]},
+    )
+    assert await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done()
+    assert len(hass.states.async_entity_ids("lock")) == 1
+    entity_id = hass.states.async_entity_ids("lock")[0]
+    assert hass.states.get(entity_id).state == "unlocked"  # type: ignore[union-attr]
+    # lock permission does not give a settable climate target
+    climate = hass.states.get(_climate_id(hass, 1, 4))
+    assert climate is not None and climate.attributes["supported_features"] == 0
+
+    requests_before = len(mock_device.records)
+    await hass.services.async_call("lock", "lock", {"entity_id": entity_id}, blocking=True)
+    assert len(mock_device.records) == requests_before and mock_device.writes == []
+    assert hass.states.get(entity_id).state == "unlocked"  # type: ignore[union-attr]  # not optimistic
+
+    await mock_entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert mock_device.writes == [("write_coil", 1, 4659, True)]
+    state = hass.states.get(entity_id)
+    assert state is not None and state.state == "locked"
+    assert state.attributes["last_command_status"] == "confirmed"
+
+
+async def test_no_lock_entities_when_writing_is_off(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    await _setup(hass, mock_entry)
+    assert hass.states.async_entity_ids("lock") == []

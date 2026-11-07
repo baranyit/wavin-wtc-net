@@ -153,6 +153,8 @@ class MockWtcBackend:
         self.unreadable_registers: set[int] = set()
         self.connect_attempts = 0
         self.ignore_writes = False  # device accepts the write but the read-back never changes
+        self.lock_delay = 0.0  # seconds until the lock status follows a lock command
+        self._pending_lock: list[tuple[float, int, int, bool]] = []
         self.max_in_flight = 0
         self._in_flight = 0
         self._connected = False
@@ -226,7 +228,40 @@ class MockWtcBackend:
             )
 
     async def write_coil(self, unit_id: int, address: int, value: bool) -> None:
-        self.writes.append(("write_coil", unit_id, address, value))
+        start = self.clock.now
+        outcome = "ok"
+        try:
+            if not self._connected:
+                outcome = "not_connected"
+                raise ConnectionError("mock: not connected")
+            await self.clock.sleep(self.latency)
+            self.writes.append(("write_coil", unit_id, address, value))
+            if unit_id not in self.units or unit_id in self.offline_units:
+                outcome = "offline"
+                raise p_exception(GATEWAY_TARGET_FAILED)
+            unit = self.units[unit_id]
+            unit.coils[address] = value
+            zone = address - p.COIL_LOCK_COMMAND_BASE + 1
+            if not self.ignore_writes and 1 <= zone <= p.MAX_ZONES:
+                # The lock status coil follows the command after `lock_delay` seconds.
+                self._pending_lock.append(
+                    (
+                        self.clock.now + self.lock_delay,
+                        unit_id,
+                        p.zone_lock_status_coil(zone),
+                        value,
+                    )
+                )
+        finally:
+            self.records.append(
+                RequestRecord(start, self.clock.now, "write_coil", unit_id, address, 1, outcome)
+            )
+
+    def _apply_due_lock_changes(self) -> None:
+        due = [c for c in self._pending_lock if c[0] <= self.clock.now]
+        for change in due:
+            self._pending_lock.remove(change)
+            self.units[change[1]].coils[change[2]] = change[3]
 
     # -- helpers --------------------------------------------------------------------------
 
@@ -263,6 +298,7 @@ class MockWtcBackend:
             if unit_id in self.offline_units or unit_id not in self.units:
                 outcome = "offline"
                 raise p_exception(GATEWAY_TARGET_FAILED)
+            self._apply_due_lock_changes()
             unit = self.units[unit_id]
             ranges = (
                 READABLE_REGISTER_RANGES

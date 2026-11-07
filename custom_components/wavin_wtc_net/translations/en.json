@@ -45,7 +45,8 @@
           "wheel_step_heat": "Heating wheel step (°C per position)",
           "wheel_step_cool": "Cooling wheel step (°C per position)",
           "write_enabled": "Enable writing (experimental, off by default)",
-          "writable_zones": "Zones allowed to change their target"
+          "writable_zones": "Zones allowed to change their target",
+          "lock_zones": "Zones allowed to be locked/unlocked (separate opt-in)"
         }
       }
     },
@@ -168,6 +169,11 @@
       },
       "dew_point_input": {
         "name": "Dew point input"
+      }
+    },
+    "lock": {
+      "zone_lock": {
+        "name": "Lock"
       }
     }
   },

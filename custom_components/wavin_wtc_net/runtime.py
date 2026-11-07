@@ -11,8 +11,8 @@ from .client import DEFAULT_MAX_GAP, UnitConfig, WtcReadClient
 from .protocol import REG_MODE
 from .pymodbus_backend import PymodbusBackend
 from .transport import Clock, GatewayTransport, ModbusReadBackend, TransportSettings
-from .write_backend import PymodbusWheelBackend
-from .write_transport import ModbusWheelBackend, WritableGatewayTransport
+from .write_backend import PymodbusWriteBackend
+from .write_transport import ModbusWriteBackend, WritableGatewayTransport
 
 
 def unit_configs(units: Mapping[int, int]) -> list[UnitConfig]:
@@ -39,12 +39,12 @@ def build_client(
     settings = settings or TransportSettings()
     transport: GatewayTransport
     if writable:
-        wheel_backend = backend or PymodbusWheelBackend(
+        write_backend = backend or PymodbusWriteBackend(
             host, port, timeout=settings.request_timeout
         )
-        if not hasattr(wheel_backend, "write_register"):
-            raise TypeError("backend has no single-register write")
-        transport = WritableGatewayTransport(_as_wheel(wheel_backend), settings, clock)
+        if not (hasattr(write_backend, "write_register") and hasattr(write_backend, "write_coil")):
+            raise TypeError("backend has no single-item writes")
+        transport = WritableGatewayTransport(_as_writer(write_backend), settings, clock)
     else:
         backend = backend or PymodbusBackend(host, port, timeout=settings.request_timeout)
         transport = GatewayTransport(backend, settings, clock)
@@ -65,5 +65,5 @@ async def probe_endpoint(host: str, port: int, unit_ids: list[int]) -> None:
         await transport.close()
 
 
-def _as_wheel(backend: ModbusReadBackend) -> ModbusWheelBackend:
+def _as_writer(backend: ModbusReadBackend) -> ModbusWriteBackend:
     return backend  # type: ignore[return-value]  # checked via hasattr by the caller

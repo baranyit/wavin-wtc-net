@@ -45,7 +45,8 @@
           "wheel_step_heat": "Fűtési tekerőlépés (°C pozíciónként)",
           "wheel_step_cool": "Hűtési tekerőlépés (°C pozíciónként)",
           "write_enabled": "Írás engedélyezése (kísérleti, alapból kikapcsolva)",
-          "writable_zones": "Zónák, amelyek célhőmérséklete módosítható"
+          "writable_zones": "Zónák, amelyek célhőmérséklete módosítható",
+          "lock_zones": "Zónák, amelyek zárolhatók/feloldhatók (külön engedély)"
         }
       }
     },
@@ -168,6 +169,11 @@
       },
       "dew_point_input": {
         "name": "Harmatpont bemenet"
+      }
+    },
+    "lock": {
+      "zone_lock": {
+        "name": "Zár"
       }
     }
   },

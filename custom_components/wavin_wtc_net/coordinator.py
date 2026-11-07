@@ -18,9 +18,11 @@ from .calibration import calibration_from_options
 from .client import WtcReadClient
 from .commands import (
     CommandExecutor,
+    CommandKind,
     CommandRecord,
     CommandRejectedError,
     RejectReason,
+    validate_lock_target,
     validate_wheel_target,
 )
 from .const import DOMAIN
@@ -74,7 +76,9 @@ class WtcCoordinator(DataUpdateCoordinator[GatewaySnapshot]):
             calibration=self.calibration,
             permissions=executor.permissions,
         )
-        command = executor.queue.create(unit_id, zone, target, code, executor.connection_generation)
+        command = executor.queue.create(
+            CommandKind.WHEEL_TARGET, unit_id, zone, target, code, executor.connection_generation
+        )
         record = executor.queue.submit(command)
         self.async_update_listeners()
         return record
@@ -110,3 +114,18 @@ class WtcCoordinator(DataUpdateCoordinator[GatewaySnapshot]):
                 )
             else:
                 ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+
+    def submit_lock(self, unit_id: int, zone: int, locked: bool) -> CommandRecord:
+        """Validate and queue a lock change. No I/O: sent at the next scheduled cycle."""
+        executor = self.executor
+        if executor is None:
+            raise CommandRejectedError(RejectReason.WRITE_DISABLED, "write mode is off")
+        validate_lock_target(
+            unit_id=unit_id, zone=zone, snapshot=self.data, permissions=executor.permissions
+        )
+        command = executor.queue.create(
+            CommandKind.LOCK, unit_id, zone, locked, int(locked), executor.connection_generation
+        )
+        record = executor.queue.submit(command)
+        self.async_update_listeners()
+        return record

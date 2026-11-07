@@ -34,5 +34,5 @@ hardware-run logging of status offsets 4/5 vs writable coils 0/1 (plan step 4).
 
 `commands.py`, `write_transport.py`, `write_backend.py`, `polarity.py`, poller `before_reads`,
 coordinator `submit_wheel_target`, climate `set_temperature`, options (`write_enabled`,
-`writable_zones`), diagnostics (recent commands). Hardware write test done (see `docs/hardware-write-test-2026-11-07.md`). Dial-turn after write confirmed. Cooling comfort writes opened (decision 11). Remaining: lock
+`writable_zones`), diagnostics (recent commands). Hardware write test done (see `docs/hardware-write-test-2026-11-07.md`). Dial-turn after write confirmed. Cooling comfort writes opened (decision 11). Lock write path built (decision 13), hardware lock test pending. Remaining: lock
 writes after delayed-status validation, cooling writes after a cooling run, economy semantics.

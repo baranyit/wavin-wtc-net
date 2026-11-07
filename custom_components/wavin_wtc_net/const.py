@@ -24,6 +24,7 @@ CONF_WHEEL_STEP_HEAT: Final = "wheel_step_heat"
 CONF_WHEEL_STEP_COOL: Final = "wheel_step_cool"
 CONF_WRITE_ENABLED: Final = "write_enabled"
 CONF_WRITABLE_ZONES: Final = "writable_zones"  # ["2:2", ...] = "unit:zone"
+CONF_LOCK_ZONES: Final = "lock_zones"  # separate opt-in for lock writes, same format
 
 DEFAULT_NAME: Final = "Wavin WTC-NET"
 DEFAULT_PORT: Final = 502

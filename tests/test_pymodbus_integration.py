@@ -282,12 +282,12 @@ async def test_connect_to_closed_port_fails_cleanly() -> None:
 
 
 async def test_wheel_write_is_exactly_one_function_06_and_reads_back() -> None:
-    from custom_components.wavin_wtc_net.write_backend import PymodbusWheelBackend
+    from custom_components.wavin_wtc_net.write_backend import PymodbusWriteBackend
     from custom_components.wavin_wtc_net.write_transport import WritableGatewayTransport
 
     async with local_server() as server:
         clock = VirtualClock()
-        backend = PymodbusWheelBackend(HOST, server.port, timeout=2.0)
+        backend = PymodbusWriteBackend(HOST, server.port, timeout=2.0)
         transport = WritableGatewayTransport(
             backend, TransportSettings(request_timeout=2.0, connect_timeout=2.0), clock
         )
@@ -303,3 +303,23 @@ async def test_wheel_write_is_exactly_one_function_06_and_reads_back() -> None:
         finally:
             await transport.close()
         assert server.write_codes == [6]  # exactly one write, function code 06
+
+
+async def test_lock_write_is_exactly_one_function_05_and_reads_back() -> None:
+    from custom_components.wavin_wtc_net.write_backend import PymodbusWriteBackend
+    from custom_components.wavin_wtc_net.write_transport import WritableGatewayTransport
+
+    async with local_server() as server:
+        clock = VirtualClock()
+        backend = PymodbusWriteBackend(HOST, server.port, timeout=2.0)
+        transport = WritableGatewayTransport(
+            backend, TransportSettings(request_timeout=2.0, connect_timeout=2.0), clock
+        )
+        try:
+            address = p.zone_lock_command_coil(3)
+            assert await transport.read_coils(1, address, 1) == (False,)
+            await transport.write_lock_coil(1, address, True)
+            assert await transport.read_coils(1, address - 1, 3) == (False, True, False)
+        finally:
+            await transport.close()
+        assert server.write_codes == [5]
