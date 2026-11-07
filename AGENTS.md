@@ -29,8 +29,13 @@ unless a user explicitly asked for it**.
   `docs/hardware-validation-2026-11-07.md`. Open decisions 1-9 are decided. The wheel rule is
   closed: comfort `neutral + (code - 6) x step` with configurable heat/cool neutral and step
   (22/26 °C, 0.5/0.5 here), economy ignores the wheel. Cooling is accepted by rule, not measured.
-- Not yet done: plan step 1 evidence freeze, a cooling-season read-only run, plan step 5
-  (command layer) and everything after it.
+- **Done – plan step 5 (code, mock/loopback tested, not hardware tested):** wheel comfort-target
+  commands (heating only), permission tiers (write mode off by default + per-zone opt-in), queue
+  with latest-value-wins, expiry and reconnect guard, flush before the next cycle's reads,
+  read-back verification (2 cycles, never rewritten). Details: `docs/open-decisions.md` decision 10.
+- Not yet done: plan step 1 evidence freeze, a cooling-season read-only run, the **hardware write
+  test** (needs separate maintainer approval + recovery plan, AGENTS §10), optional lock writes,
+  plan step 6 and later.
 - Do not start later plan steps (writes, global controls) before the earlier gates pass.
 
 ## 3. Source of truth (`docs/`)
@@ -150,8 +155,11 @@ custom_components/wavin_wtc_net/
   runtime.py, unit_spec.py ✓  HA-free helpers (client factory + probe, "1:6, 2:4" parser)
   coordinator.py, config_flow.py, entity.py, climate.py, sensor.py, binary_sensor.py,
   diagnostics.py, strings.json, translations/{en,hu}.json ✓  (read-only HA layer)
-  commands.py     # permissions, coalescing queue, expiry tokens, read-back verification
-  # later: coordinator gains the command phase (freeze queue → writes → reads → verify)
+  polarity.py ✓   fixed bit polarity (single source for core and HA layer)
+  commands.py ✓   permissions, validation, coalescing queue, expiry, read-back verification
+  write_transport.py, write_backend.py ✓  the ONLY write route: one wheel register (4604..4610,
+                  codes 0..12, FC06), a transport subclass built only when write mode is on
+  # coordinator command phase: poller hook before_reads (send queue) → reads → on_snapshot (verify)
 tests/
 ```
 
@@ -258,7 +266,7 @@ immediate MQTT-style writes.
 - Packed wheel words 4600–4603 vs B+3 offset vs physical dial correlation.
 - Firmware/serial registers, so serial-based identity is not yet allowed.
 - Lock delay and authoritative lock status address.
-- Global vs zone bit precedence. Conflicting bits must block target writes and emit diagnostics.
+- Global vs zone bit precedence. Decision 10: master bits are ignored for the wheel command (real install runs zones in comfort while the master bit is economy); only a zone's own status vs control bit disagreement blocks a target write.
 - BMS timeout, reset semantics and safe value.
 - Unit-ID semantics on real hardware (keys 1/2 → Modbus unit IDs is evidenced only in HomeGate code).
 

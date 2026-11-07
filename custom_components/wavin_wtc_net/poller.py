@@ -1,10 +1,10 @@
 """Non-overlapping poll cycle driver for one endpoint.
 
-The Home Assistant coordinator (next milestone) will drive cycles through this
-class. A cycle is: (later: flush explicitly queued user commands) -> serialized
-reads -> snapshot. In this milestone the command phase does not exist, so a
-cycle performs reads only. Cycles never overlap: a tick that arrives while a
-cycle is running is skipped and counted.
+The Home Assistant coordinator drives cycles through this class. A cycle is: an optional
+``before_reads`` hook (the command layer sends what the user explicitly queued) -> serialized
+reads -> snapshot -> ``on_snapshot`` (read-back verification). Without hooks a cycle performs
+reads only. Cycles never overlap: a tick that arrives while a cycle is running is skipped and
+counted.
 Pure Python: no Home Assistant imports.
 """
 
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from .client import WtcReadClient
 from .models import GatewaySnapshot
@@ -27,6 +27,7 @@ class GatewayPoller:
         interval: float,
         clock: Clock | None = None,
         on_snapshot: Callable[[GatewaySnapshot], None] | None = None,
+        before_reads: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         if not (math.isfinite(interval) and interval > 0):
             raise ValueError("interval must be positive")
@@ -34,6 +35,7 @@ class GatewayPoller:
         self._interval = interval
         self._clock: Clock = clock or AsyncioClock()
         self._on_snapshot = on_snapshot
+        self._before_reads = before_reads
         self._cycle_lock = asyncio.Lock()
         self.completed_cycles = 0
         self.skipped_cycles = 0
@@ -49,6 +51,8 @@ class GatewayPoller:
             self.skipped_cycles += 1
             return None
         async with self._cycle_lock:
+            if self._before_reads is not None:
+                await self._before_reads()  # explicit queued user commands only, then the reads
             snapshot = await self._client.read_snapshot()
             self.last_snapshot = snapshot
             self.completed_cycles += 1

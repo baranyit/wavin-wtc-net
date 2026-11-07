@@ -18,6 +18,8 @@ Local equivalent (see `AGENTS.md` §9): `uv venv -p 3.13 && uv pip install -e ".
 
 ## Hardware
 
+Write tests (mock and loopback, `tests/test_commands.py`, `tests/ha/test_integration.py`, `tests/test_pymodbus_integration.py`) cover permissions, validation, latest-value-wins, ordering before reads, one-request-per-second, lag/timeout/no rewrite, expiry, reconnect, device exception, transport error, zero writes with an empty queue and the transport's hard limit (one wheel register, one function code 06). The first hardware write is a separate, approved test (below).
+
 Begin read-only: inventory units/firmware/LIVE zones using the one-request-per-second baseline and small blocks; passively correlate dial/mode changes; characterize cadence only after a stable soak. Never test an oversized range directly on production hardware merely to find its failure point. Any later write requires separate user approval and recovery plan: one agreed zone, queued until the next cycle, one raw wheel step, physical/readback observation, restoration; locks/zone controls next; global/BMS tests last.
 
 Record date, firmware, unit/zone, before/after raw values, command, delay and physical result—never credentials or unrelated full payloads.

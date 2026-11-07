@@ -279,3 +279,27 @@ async def test_connect_to_closed_port_fails_cleanly() -> None:
     assert not backend.connected
     assert transport.stats.backoff_until is not None
     await transport.close()
+
+
+async def test_wheel_write_is_exactly_one_function_06_and_reads_back() -> None:
+    from custom_components.wavin_wtc_net.write_backend import PymodbusWheelBackend
+    from custom_components.wavin_wtc_net.write_transport import WritableGatewayTransport
+
+    async with local_server() as server:
+        clock = VirtualClock()
+        backend = PymodbusWheelBackend(HOST, server.port, timeout=2.0)
+        transport = WritableGatewayTransport(
+            backend, TransportSettings(request_timeout=2.0, connect_timeout=2.0), clock
+        )
+        try:
+            address = p.zone_wheel_code_register(2)
+            before = await transport.read_holding_registers(2, address, 1)
+            await transport.write_wheel_code(2, address, 6)
+            after = await transport.read_holding_registers(2, address, 1)
+            assert before != after and after == (6,)
+            # other zone registers of the same unit are untouched
+            neighbours = await transport.read_holding_registers(2, p.zone_wheel_code_register(1), 3)
+            assert neighbours[0] == 6 and neighbours[2] == 5  # zones 1 and 3 untouched
+        finally:
+            await transport.close()
+        assert server.write_codes == [6]  # exactly one write, function code 06

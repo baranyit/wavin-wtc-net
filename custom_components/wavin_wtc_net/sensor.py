@@ -16,22 +16,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import WtcConfigEntry
-from .const import (
-    COMFORT,
-    CONF_NEUTRAL_COOL,
-    CONF_NEUTRAL_HEAT,
-    CONF_UNITS,
-    CONF_WHEEL_STEP_COOL,
-    CONF_WHEEL_STEP_HEAT,
-    COOLING,
-    DEFAULT_NEUTRAL_COOL,
-    DEFAULT_NEUTRAL_HEAT,
-    DEFAULT_WHEEL_STEP,
-    ON_OFF_ON,
-)
+from .calibration import calibration_from_options, zone_effective_target
+from .const import COMFORT, CONF_UNITS
 from .entity import WtcEntity
 from .models import ControllerSnapshot, ZoneSnapshot
-from .protocol import WheelCalibration, zone_target_temperature
 
 PARALLEL_UPDATES = 0
 
@@ -282,38 +270,17 @@ TARGET_DESCRIPTION = SensorEntityDescription(
 class WtcTargetSensor(WtcEntity, SensorEntity):
     """Regulation target derived from the polled wheel code and the entry's calibration.
 
-    A sensor, not the climate target: the climate entity stays without controls until plan step 5.
-    Unknown mode/preset, off, or an unvalidated case (economy cooling) gives no value.
+    A sensor that is always read-only. Unknown mode/preset, off, or an unvalidated case
+    (economy cooling) gives no value.
     """
 
     entity_description = TARGET_DESCRIPTION
 
     def __init__(self, entry: WtcConfigEntry, unit_id: int, zone: int) -> None:
         super().__init__(entry, unit_id, zone, TARGET_DESCRIPTION.key)
-        options = entry.options
-        self._calibration = WheelCalibration(
-            neutral_heat=float(options.get(CONF_NEUTRAL_HEAT, DEFAULT_NEUTRAL_HEAT)),
-            neutral_cool=float(options.get(CONF_NEUTRAL_COOL, DEFAULT_NEUTRAL_COOL)),
-            step_heat=float(options.get(CONF_WHEEL_STEP_HEAT, DEFAULT_WHEEL_STEP)),
-            step_cool=float(options.get(CONF_WHEEL_STEP_COOL, DEFAULT_WHEEL_STEP)),
-        )
+        self._calibration = calibration_from_options(entry.options)
 
     @property
     def native_value(self) -> float | None:
         zone = self.zone_snapshot
-        if zone is None:
-            return None
-        on = zone.on_off if zone.on_off is not None else zone.control_on_off
-        preset = (
-            zone.comfort_economy
-            if zone.comfort_economy is not None
-            else zone.control_comfort_economy
-        )
-        if on != ON_OFF_ON or zone.heat_cool is None or preset is None:
-            return None
-        return zone_target_temperature(
-            zone,
-            self._calibration,
-            cooling=zone.heat_cool == COOLING,
-            comfort=preset == COMFORT,
-        )
+        return zone_effective_target(zone, self._calibration) if zone else None

@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlowWithReload
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
 from homeassistant.core import callback
+from homeassistant.helpers import config_validation as cv
 
 from .client import DEFAULT_MAX_GAP, MAX_ALLOWED_GAP
 from .const import (
@@ -20,6 +21,8 @@ from .const import (
     CONF_UNITS,
     CONF_WHEEL_STEP_COOL,
     CONF_WHEEL_STEP_HEAT,
+    CONF_WRITABLE_ZONES,
+    CONF_WRITE_ENABLED,
     DEFAULT_NAME,
     DEFAULT_NEUTRAL_COOL,
     DEFAULT_NEUTRAL_HEAT,
@@ -101,6 +104,8 @@ class WtcConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_NEUTRAL_COOL: DEFAULT_NEUTRAL_COOL,
                         CONF_WHEEL_STEP_HEAT: DEFAULT_WHEEL_STEP,
                         CONF_WHEEL_STEP_COOL: DEFAULT_WHEEL_STEP,
+                        CONF_WRITE_ENABLED: False,
+                        CONF_WRITABLE_ZONES: [],
                     },
                 )
             errors["base"] = error or "unknown"
@@ -165,9 +170,16 @@ class WtcOptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             if user_input[CONF_POLL_INTERVAL] < minimum:
                 errors[CONF_POLL_INTERVAL] = "interval_too_low"
+            elif user_input[CONF_WRITE_ENABLED] and not user_input[CONF_WRITABLE_ZONES]:
+                errors[CONF_WRITABLE_ZONES] = "no_zone_selected"
             else:
                 return self.async_create_entry(data=user_input)
         current = user_input or entry.options
+        zone_choices = {
+            f"{unit}:{zone}": f"Unit {unit} zone {zone}"
+            for unit, zones in sorted(units.items())
+            for zone in range(1, zones + 1)
+        }
         schema = vol.Schema(
             {
                 vol.Required(
@@ -191,6 +203,12 @@ class WtcOptionsFlow(OptionsFlowWithReload):
                     CONF_WHEEL_STEP_COOL,
                     default=current.get(CONF_WHEEL_STEP_COOL, DEFAULT_WHEEL_STEP),
                 ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=2)),
+                vol.Required(
+                    CONF_WRITE_ENABLED, default=current.get(CONF_WRITE_ENABLED, False)
+                ): bool,
+                vol.Required(
+                    CONF_WRITABLE_ZONES, default=current.get(CONF_WRITABLE_ZONES, [])
+                ): cv.multi_select(zone_choices),
             }
         )
         return self.async_show_form(

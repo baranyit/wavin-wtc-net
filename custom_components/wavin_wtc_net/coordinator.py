@@ -1,4 +1,8 @@
-"""Coordinator wrapping ``GatewayPoller``: one cycle per refresh, read-only."""
+"""Coordinator wrapping ``GatewayPoller``: one cycle per refresh.
+
+Reads only, unless write mode is on: then explicitly queued wheel commands are sent at the start
+of the next cycle, before the reads (``commands.py``). Entity state always comes from reads.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +14,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .calibration import calibration_from_options
 from .client import WtcReadClient
+from .commands import (
+    CommandExecutor,
+    CommandRecord,
+    CommandRejectedError,
+    RejectReason,
+    validate_wheel_target,
+)
 from .const import DOMAIN
 from .models import GatewaySnapshot
 from .poller import GatewayPoller
@@ -30,6 +42,7 @@ class WtcCoordinator(DataUpdateCoordinator[GatewaySnapshot]):
         entry: WtcConfigEntry,
         client: WtcReadClient,
         interval: float,
+        executor: CommandExecutor | None = None,
     ) -> None:
         super().__init__(
             hass,
@@ -39,7 +52,32 @@ class WtcCoordinator(DataUpdateCoordinator[GatewaySnapshot]):
             update_interval=timedelta(seconds=interval),
         )
         self.client = client
-        self.poller = GatewayPoller(client, interval=interval)
+        self.executor = executor
+        self.calibration = calibration_from_options(entry.options)
+        self.poller = GatewayPoller(
+            client,
+            interval=interval,
+            before_reads=executor.before_reads if executor else None,
+            on_snapshot=executor.verify if executor else None,
+        )
+
+    def submit_wheel_target(self, unit_id: int, zone: int, target: float) -> CommandRecord:
+        """Validate and queue a comfort target. No I/O: it is sent at the next scheduled cycle."""
+        executor = self.executor
+        if executor is None:
+            raise CommandRejectedError(RejectReason.WRITE_DISABLED, "write mode is off")
+        code = validate_wheel_target(
+            unit_id=unit_id,
+            zone=zone,
+            target=target,
+            snapshot=self.data,
+            calibration=self.calibration,
+            permissions=executor.permissions,
+        )
+        command = executor.queue.create(unit_id, zone, target, code, executor.connection_generation)
+        record = executor.queue.submit(command)
+        self.async_update_listeners()
+        return record
 
     async def _async_update_data(self) -> GatewaySnapshot:
         snapshot = await self.poller.run_cycle()

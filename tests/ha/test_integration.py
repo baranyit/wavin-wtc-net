@@ -6,9 +6,11 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -200,6 +202,8 @@ async def test_user_flow_creates_entry_with_generated_gateway_id(
         "neutral_cool": 26.0,
         "wheel_step_heat": 0.5,
         "wheel_step_cool": 0.5,
+        "write_enabled": False,
+        "writable_zones": [],
     }
 
 
@@ -313,3 +317,119 @@ def test_every_english_string_has_a_hungarian_translation() -> None:
     hungarian = json.loads((PACKAGE / "translations" / "hu.json").read_text(encoding="utf-8"))
     assert strings == english
     assert _keys(english) == _keys(hungarian)
+
+
+# -- write mode ------------------------------------------------------------------------------
+
+
+def _climate_id(hass: HomeAssistant, unit: int, zone: int) -> str:
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "climate", DOMAIN, f"{GATEWAY_ID}_u{unit}_z{zone}_climate"
+    )
+    assert entity_id is not None
+    return entity_id
+
+
+async def test_write_mode_is_off_by_default_no_target_control(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    await _setup(hass, mock_entry)
+    state = hass.states.get(_climate_id(hass, 2, 2))
+    assert state is not None
+    assert state.attributes["supported_features"] == 0
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            "climate",
+            "set_temperature",
+            {"entity_id": state.entity_id, "temperature": 22.0},
+            blocking=True,
+        )
+    assert mock_device.writes == []
+
+
+async def test_set_temperature_is_queued_then_written_at_the_next_cycle(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    mock_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_entry,
+        options={**mock_entry.options, "write_enabled": True, "writable_zones": ["2:2"]},
+    )
+    assert await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done()
+    entity_id = _climate_id(hass, 2, 2)
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.attributes["temperature"] == 22.5  # mock: code 7, neutral 22, step 0.5
+    other = hass.states.get(_climate_id(hass, 2, 3))
+    assert other is not None and other.attributes["supported_features"] == 0  # not enabled
+
+    requests_before = len(mock_device.records)
+    await hass.services.async_call(
+        "climate", "set_temperature", {"entity_id": entity_id, "temperature": 22.0}, blocking=True
+    )
+    assert len(mock_device.records) == requests_before  # queued only: no traffic, no write
+    assert mock_device.writes == []
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.attributes["temperature"] == 22.5  # no optimistic state
+    assert state.attributes["last_command_status"] == "queued"
+
+    await mock_entry.runtime_data.coordinator.async_refresh()  # the next scheduled cycle
+    await hass.async_block_till_done()
+    assert mock_device.writes == [("write_register", 2, 4605, 6)]
+    cycle = mock_device.records[requests_before:]
+    assert cycle[0].op == "write_register" and all(r.op != "write_register" for r in cycle[1:])
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.attributes["temperature"] == 22.0  # from the read-back
+    assert state.attributes["last_command_status"] == "confirmed"
+
+    await mock_entry.runtime_data.coordinator.async_refresh()
+    assert len(mock_device.writes) == 1  # never replayed
+
+
+async def test_rejected_targets_never_reach_the_device(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    mock_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_entry,
+        options={**mock_entry.options, "write_enabled": True, "writable_zones": ["2:2"]},
+    )
+    assert await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done()
+    entity_id = _climate_id(hass, 2, 2)
+    for target in (22.25, 30.0):  # not a whole step / outside the wheel range
+        with pytest.raises(ServiceValidationError):
+            await hass.services.async_call(
+                "climate",
+                "set_temperature",
+                {"entity_id": entity_id, "temperature": target},
+                blocking=True,
+            )
+    await mock_entry.runtime_data.coordinator.async_refresh()
+    assert mock_device.writes == []
+
+
+async def test_options_require_a_zone_when_writing_is_enabled(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    await _setup(hass, mock_entry)
+    result = await hass.config_entries.options.async_init(mock_entry.entry_id)
+    bad = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {CONF_POLL_INTERVAL: 60, CONF_MAX_GAP: 8, "write_enabled": True, "writable_zones": []},
+    )
+    assert bad["errors"] == {"writable_zones": "no_zone_selected"}
+    ok = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_POLL_INTERVAL: 60,
+            CONF_MAX_GAP: 8,
+            "write_enabled": True,
+            "writable_zones": ["1:1"],
+        },
+    )
+    assert ok["type"] is FlowResultType.CREATE_ENTRY
+    assert mock_device.writes == []  # configuring writing writes nothing

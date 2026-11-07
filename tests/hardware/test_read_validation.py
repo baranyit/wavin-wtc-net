@@ -156,4 +156,4 @@ async def test_read_only_validation_report() -> None:
     assert stats.requests_started <= client.first_cycle_requests + cycles * (
         client.requests_per_cycle * 3
     )
-    assert not hasattr(transport, "write_coil") and not hasattr(transport, "write_register")
+    assert not hasattr(transport, "write_wheel_code")  # read-only transport class

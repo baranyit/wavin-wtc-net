@@ -36,19 +36,22 @@
     "step": {
       "init": {
         "title": "Lekérdezés",
-        "description": "Ennek a beállításnak a minimális lekérdezési ideje {minimum} mp. A legnagyobb áthidalt cím-rés módosítása haladó beállítás: csak azt változtatja, hogyan hidalja át a használaton kívüli címeket, írni sosem ír (egyáltalán nincs írás).",
+        "description": "Ennek a beállításnak a minimális lekérdezési ideje {minimum} mp. A legnagyobb áthidalt cím-rés módosítása haladó beállítás: csak azt változtatja, hogyan hidalja át a használaton kívüli címeket, írni sosem ír (egyáltalán nincs írás). Írás: bekapcsolva a Home Assistantban beállított cél egyetlen tekerő-regiszterként, csak a kijelölt zónákba, a következő lekérdezés elején kerül elküldésre, és a következő olvasás megerősítése után jelenik meg. Máskülönben semmi nem íródik.",
         "data": {
           "poll_interval": "Lekérdezési idő (mp)",
           "max_gap": "Olvasásonként áthidalt legnagyobb címrés (0-8)",
           "neutral_heat": "Fűtési semleges hőmérséklet (°C), a tekerő középállása",
           "neutral_cool": "Hűtési semleges hőmérséklet (°C), a tekerő középállása",
           "wheel_step_heat": "Fűtési tekerőlépés (°C pozíciónként)",
-          "wheel_step_cool": "Hűtési tekerőlépés (°C pozíciónként)"
+          "wheel_step_cool": "Hűtési tekerőlépés (°C pozíciónként)",
+          "write_enabled": "Írás engedélyezése (kísérleti, alapból kikapcsolva)",
+          "writable_zones": "Zónák, amelyek célhőmérséklete módosítható"
         }
       }
     },
     "error": {
-      "interval_too_low": "A lekérdezési idő kisebb, mint ennek a beállításnak a minimuma."
+      "interval_too_low": "A lekérdezési idő kisebb, mint ennek a beállításnak a minimuma.",
+      "no_zone_selected": "Válassz legalább egy zónát, vagy kapcsold ki az írást."
     }
   },
   "issues": {
@@ -166,6 +169,11 @@
       "dew_point_input": {
         "name": "Harmatpont bemenet"
       }
+    }
+  },
+  "exceptions": {
+    "command_rejected": {
+      "message": "A parancs elutasítva: {reason}"
     }
   }
 }

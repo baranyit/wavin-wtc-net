@@ -239,3 +239,24 @@ economy target = economy setpoint (wheel not applied). Cooling is untested (deci
 Details: `docs/hardware-validation-2026-11-07.md`. Open: why the vendor says nothing about the step
 size, and whether other thermostat models differ.
 
+
+## 10. Command layer design (decided 2026-11-07, plan step 5)
+
+Choices made by the implementer within the maintainer's rules; revisit with hardware evidence.
+
+- **Scope:** wheel comfort target in heating only. Economy (wheel has no effect), cooling (decision
+  6: not validated), off or not-live zones are rejected locally. Lock writes are not built.
+- **One write route:** `WritableGatewayTransport.write_wheel_code` writes one register in
+  4604..4610 with a value 0..12 (function code 06) and nothing else. It exists only if write mode
+  is on and at least one zone is selected; otherwise the read-only transport class is used.
+- **Flow:** validate against the latest snapshot (no I/O) → queue (latest-value-wins per unit/zone)
+  → sent at the start of the next scheduled cycle through the shared 1 request/s limiter → verified
+  from that cycle's reads, with one more cycle of grace → TIMEOUT. Never rewritten.
+- **Expiry/replay:** a command expires after 2 poll intervals and is dropped if the connection was
+  lost or reconnected since it was queued.
+- **Conflicting bits (AGENTS §13):** the hardware run shows the master comfort/economy bit False
+  while most zones are in comfort, so a master/zone mismatch is normal and does not block. Only a
+  zone's own status bit disagreeing with its control bit blocks (CONFLICTING_BITS).
+- **Open for hardware:** the vendor says BMS-written values are effective until power cycle; the
+  first approved write test must observe whether the wheel write overrides the dial and what a
+  physical dial change does afterwards (AGENTS §10: one agreed zone, one raw step, restore).
