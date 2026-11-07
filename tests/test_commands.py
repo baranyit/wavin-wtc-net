@@ -148,7 +148,6 @@ def _with_zone(
     [
         ({"on_off": False, "control_on_off": False}, RejectReason.ZONE_OFF),
         ({"comfort_economy": False, "control_comfort_economy": False}, RejectReason.NOT_COMFORT),
-        ({"heat_cool": True, "control_heat_cool": True}, RejectReason.COOLING_UNVALIDATED),
         ({"live": False}, RejectReason.ZONE_NOT_LIVE),
         ({"on_off": True, "control_on_off": False}, RejectReason.CONFLICTING_BITS),
         (
@@ -375,3 +374,71 @@ async def test_read_only_transport_has_no_write_route() -> None:
     transport, _ = build_client("192.0.2.1", 502, UNITS, backend=MockWtcBackend.for_profile(clock))
     assert not isinstance(transport, WritableGatewayTransport)
     assert not hasattr(transport, "write_wheel_code")
+
+
+# -- cooling comfort targets (decision 11: same rule as heating, cooling neutral and step) -------
+
+
+def _make_cooling(rig: Rig, unit: int, zone: int) -> None:
+    mem = rig.backend.units[unit].coils
+    mem[p.zone_status_coil_base(zone) + 6] = True
+    mem[p.zone_control_coil_base(zone) + 2] = True
+
+
+async def test_cooling_target_uses_the_cooling_neutral_and_step() -> None:
+    rig = Rig()
+    _make_cooling(rig, 2, 2)
+    snapshot = await rig.cycle()
+    for target, code in ((26.0, 6), (26.5, 7), (24.5, 3), (29.0, 12)):
+        assert (
+            validate_wheel_target(
+                unit_id=2,
+                zone=2,
+                target=target,
+                snapshot=snapshot,
+                calibration=CAL,
+                permissions=ALLOW_2_2,
+            )
+            == code
+        )
+    with pytest.raises(CommandRejectedError) as err:  # 22 C is a heating value, out of range
+        validate_wheel_target(
+            unit_id=2,
+            zone=2,
+            target=22.0,
+            snapshot=snapshot,
+            calibration=CAL,
+            permissions=ALLOW_2_2,
+        )
+    assert err.value.reason is RejectReason.INVALID_TARGET
+
+
+async def test_cooling_target_is_written_and_confirmed() -> None:
+    rig = Rig()
+    _make_cooling(rig, 2, 2)
+    snapshot = await rig.cycle()
+    rig.clock.now += 60
+    rig.submit(2, 2, 26.5, snapshot)
+    await rig.cycle()
+    assert rig.backend.writes == [("write_register", 2, CODE_REG(2), 7)]
+    record = rig.queue.latest(2, 2)
+    assert record is not None and record.status is CommandStatus.CONFIRMED
+    assert not [w for w in rig.backend.writes if w[0] == "write_coil"]
+
+
+async def test_cooling_economy_is_still_rejected() -> None:
+    rig = Rig()
+    _make_cooling(rig, 2, 2)
+    snapshot = _with_zone(
+        await rig.cycle(), 2, 2, comfort_economy=False, control_comfort_economy=False
+    )
+    with pytest.raises(CommandRejectedError) as err:
+        validate_wheel_target(
+            unit_id=2,
+            zone=2,
+            target=26.0,
+            snapshot=snapshot,
+            calibration=CAL,
+            permissions=ALLOW_2_2,
+        )
+    assert err.value.reason is RejectReason.NOT_COMFORT

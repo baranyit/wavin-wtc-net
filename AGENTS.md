@@ -30,7 +30,7 @@ unless a user explicitly asked for it**.
   closed: comfort `neutral + (code - 6) x step` with configurable heat/cool neutral and step
   (22/26 °C, 0.5/0.5 here), economy ignores the wheel. Cooling is accepted by rule, not measured.
 - **Done – plan step 5 (code, mock/loopback tested, not hardware tested):** wheel comfort-target
-  commands (heating only), permission tiers (write mode off by default + per-zone opt-in), queue
+  commands (heating and, by decision 11, cooling), permission tiers (write mode off by default + per-zone opt-in), queue
   with latest-value-wins, expiry and reconnect guard, flush before the next cycle's reads,
   read-back verification (2 cycles, never rewritten). Details: `docs/open-decisions.md` decision 10.
 - **Hardware write test passed** on Dolgozó (unit 2 zone 2, one step 24 → 23.5 → 24 °C, restored):

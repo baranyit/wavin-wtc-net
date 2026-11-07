@@ -2,8 +2,8 @@
 
 Flow (docs/04-architecture.md, AGENTS.md section 4):
 
-1. ``build_wheel_command`` validates a requested comfort target against the permissions and the
-   latest snapshot and maps it to exactly one raw wheel code. It performs no I/O.
+1. ``validate_wheel_target`` validates a requested comfort target (heating or cooling) against
+   the permissions and the latest snapshot and maps it to exactly one raw wheel code. No I/O.
 2. ``CommandQueue.submit`` stores it keyed by ``(unit, zone, kind)``; a newer command supersedes
    the older one. Nothing is sent.
 3. At the start of the next scheduled cycle ``CommandExecutor.before_reads`` sends what is queued,
@@ -60,7 +60,6 @@ class RejectReason(enum.Enum):
     ZONE_OFF = "zone_off"
     MODE_UNKNOWN = "mode_unknown"
     NOT_COMFORT = "not_comfort"
-    COOLING_UNVALIDATED = "cooling_unvalidated"
     CONFLICTING_BITS = "conflicting_bits"
     INVALID_TARGET = "invalid_target"
     EXPIRED = "expired"
@@ -149,14 +148,15 @@ def validate_wheel_target(
         raise CommandRejectedError(RejectReason.NO_DATA, "zone not in the snapshot")
     if not math.isfinite(target):
         raise CommandRejectedError(RejectReason.INVALID_TARGET, "target is not a number")
-    _check_zone_state(state)
+    cooling = _check_zone_state(state)
     try:
-        return calibration.comfort_code(target, cooling=False)
+        return calibration.comfort_code(target, cooling=cooling)
     except ValueError as err:
         raise CommandRejectedError(RejectReason.INVALID_TARGET, str(err)) from err
 
 
-def _check_zone_state(state: ZoneSnapshot) -> None:
+def _check_zone_state(state: ZoneSnapshot) -> bool:
+    """Raise unless the zone is on, live, in comfort and unambiguous; return True if cooling."""
     if state.live is not True:
         raise CommandRejectedError(RejectReason.ZONE_NOT_LIVE, "thermostat is not connected")
     on = _pick(state.on_off, state.control_on_off)
@@ -176,15 +176,11 @@ def _check_zone_state(state: ZoneSnapshot) -> None:
         raise CommandRejectedError(RejectReason.MODE_UNKNOWN, "zone mode or preset is unknown")
     if on != ON_OFF_ON:
         raise CommandRejectedError(RejectReason.ZONE_OFF, "zone is switched off")
-    if cooling == COOLING:
-        raise CommandRejectedError(
-            RejectReason.COOLING_UNVALIDATED,
-            "cooling targets are not written until validated on hardware",
-        )
     if preset != COMFORT:
         raise CommandRejectedError(
             RejectReason.NOT_COMFORT, "in economy the wheel has no effect on the target"
         )
+    return cooling == COOLING
 
 
 def _pick(status: bool | None, control: bool | None) -> bool | None:
