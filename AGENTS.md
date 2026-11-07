@@ -33,8 +33,11 @@ unless a user explicitly asked for it**.
   commands (heating only), permission tiers (write mode off by default + per-zone opt-in), queue
   with latest-value-wins, expiry and reconnect guard, flush before the next cycle's reads,
   read-back verification (2 cycles, never rewritten). Details: `docs/open-decisions.md` decision 10.
-- Not yet done: plan step 1 evidence freeze, a cooling-season read-only run, the **hardware write
-  test** (needs separate maintainer approval + recovery plan, AGENTS §10), optional lock writes,
+- **Hardware write test passed** on Dolgozó (unit 2 zone 2, one step 24 → 23.5 → 24 °C, restored):
+  `docs/hardware-write-test-2026-11-07.md`. Other zones are untested; each new zone or kind of
+  write needs its own approval.
+- Not yet done: plan step 1 evidence freeze, a cooling-season read-only run, a dial-turn-after-write
+  observation, optional lock writes,
   plan step 6 and later.
 - Do not start later plan steps (writes, global controls) before the earlier gates pass.
 

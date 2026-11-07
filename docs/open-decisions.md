@@ -257,6 +257,7 @@ Choices made by the implementer within the maintainer's rules; revisit with hard
 - **Conflicting bits (AGENTS §13):** the hardware run shows the master comfort/economy bit False
   while most zones are in comfort, so a master/zone mismatch is normal and does not block. Only a
   zone's own status bit disagreeing with its control bit blocks (CONFLICTING_BITS).
-- **Open for hardware:** the vendor says BMS-written values are effective until power cycle; the
-  first approved write test must observe whether the wheel write overrides the dial and what a
-  physical dial change does afterwards (AGENTS §10: one agreed zone, one raw step, restore).
+- **Hardware result (2026-11-07):** the approved one-zone, one-step write test passed, see
+  `docs/hardware-write-test-2026-11-07.md`: the write moves the dial position the thermostat uses
+  and was restored. Still open: what a physical dial turn does after a write, and persistence over
+  a power cycle (vendor: BMS-written values last until power cycle).
