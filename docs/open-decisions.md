@@ -259,5 +259,6 @@ Choices made by the implementer within the maintainer's rules; revisit with hard
   zone's own status bit disagreeing with its control bit blocks (CONFLICTING_BITS).
 - **Hardware result (2026-11-07):** the approved one-zone, one-step write test passed, see
   `docs/hardware-write-test-2026-11-07.md`: the write moves the dial position the thermostat uses
-  and was restored. Still open: what a physical dial turn does after a write, and persistence over
-  a power cycle (vendor: BMS-written values last until power cycle).
+  and was restored. A second run confirmed that a physical dial turn after a write takes effect and
+  polling does not undo it. Still open: persistence over a power cycle (vendor: BMS-written values
+  last until power cycle).

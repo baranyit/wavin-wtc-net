@@ -154,6 +154,14 @@ async def test_one_zone_one_step_and_restore() -> None:
         await cycle("1 write step + read-back")
         await asyncio.sleep(interval)
         await cycle("2 observe")
+        dial_cycles = int(os.environ.get("WTC_DIAL_TURN_CYCLES", "0"))
+        if dial_cycles:
+            # No writes in this window: the human turns the physical dial, we only read.
+            print("\nDIAL_NOW: turn the thermostat dial one step now", flush=True)
+            for n in range(dial_cycles):
+                await asyncio.sleep(interval)
+                await cycle(f"2.{n + 1} observe dial turn")
+            print("\nDIAL_WINDOW_OVER", flush=True)
         outcome = "step written and observed"
     finally:
         try:

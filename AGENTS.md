@@ -36,8 +36,7 @@ unless a user explicitly asked for it**.
 - **Hardware write test passed** on Dolgozó (unit 2 zone 2, one step 24 → 23.5 → 24 °C, restored):
   `docs/hardware-write-test-2026-11-07.md`. Other zones are untested; each new zone or kind of
   write needs its own approval.
-- Not yet done: plan step 1 evidence freeze, a cooling-season read-only run, a dial-turn-after-write
-  observation, optional lock writes,
+- Not yet done: plan step 1 evidence freeze, a cooling-season read-only run, optional lock writes,
   plan step 6 and later.
 - Do not start later plan steps (writes, global controls) before the earlier gates pass.
 
