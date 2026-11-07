@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Final
 
+from .polarity import COMFORT, COOLING, LIVE_CONNECTED, LOCKED, ON_OFF_ON
+
 DOMAIN: Final = "wavin_wtc_net"
 
 CONF_GATEWAY_ID: Final = "gateway_id"
@@ -20,6 +22,8 @@ CONF_NEUTRAL_HEAT: Final = "neutral_heat"
 CONF_NEUTRAL_COOL: Final = "neutral_cool"
 CONF_WHEEL_STEP_HEAT: Final = "wheel_step_heat"
 CONF_WHEEL_STEP_COOL: Final = "wheel_step_cool"
+CONF_WRITE_ENABLED: Final = "write_enabled"
+CONF_WRITABLE_ZONES: Final = "writable_zones"  # ["2:2", ...] = "unit:zone"
 
 DEFAULT_NAME: Final = "Wavin WTC-NET"
 DEFAULT_PORT: Final = 502
@@ -28,9 +32,6 @@ MAX_POLL_INTERVAL: Final = 300
 DEFAULT_NEUTRAL_HEAT: Final = 22.0
 DEFAULT_NEUTRAL_COOL: Final = 26.0
 DEFAULT_WHEEL_STEP: Final = 0.5
+COMMAND_TTL_FACTOR: Final = 2.0  # a queued command expires after this many poll intervals
 
-ON_OFF_ON: Final = True
-COMFORT: Final = True
-COOLING: Final = True
-LOCKED: Final = True
-LIVE_CONNECTED: Final = True
+__all__ = ["COMFORT", "COOLING", "LIVE_CONNECTED", "LOCKED", "ON_OFF_ON"]

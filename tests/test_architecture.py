@@ -18,6 +18,10 @@ CORE_MODULES = [
     "pymodbus_backend.py",
     "runtime.py",
     "unit_spec.py",
+    "polarity.py",
+    "commands.py",
+    "write_transport.py",
+    "write_backend.py",
 ]
 READ_PATH_MODULES = ["protocol.py", "transport.py", "client.py", "poller.py", "pymodbus_backend.py"]
 
@@ -47,3 +51,14 @@ def test_read_path_never_references_write_operations(module: str) -> None:
             assert "write" not in node.id.lower(), f"{module}: {node.id}"
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             assert not node.value.lower().startswith("write"), f"{module}: {node.value}"
+
+
+WRITE_MODULES = {"commands", "write_transport", "write_backend"}
+
+
+@pytest.mark.parametrize("module", READ_PATH_MODULES)
+def test_read_path_does_not_import_the_write_modules(module: str) -> None:
+    for node in ast.walk(_tree(module)):
+        if isinstance(node, ast.ImportFrom):
+            imported = {(node.module or "").split(".")[0]} | {a.name for a in node.names}
+            assert not imported & WRITE_MODULES, f"{module} imports {imported & WRITE_MODULES}"

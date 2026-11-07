@@ -29,3 +29,10 @@ hardware-run logging of status offsets 4/5 vs writable coils 0/1 (plan step 4).
    comfort, heat_cool True = cool, lock True = locked, live True = connected. Tests: both bit
    directions for hvac mode/preset/availability; conflicting zone/master bits block target writes
    (AGENTS.md §13). Hardware run: log status offsets 4/5 next to writable coils offsets 0/1.
+
+## Landed: command layer (2026-11-07, plan step 5)
+
+`commands.py`, `write_transport.py`, `write_backend.py`, `polarity.py`, poller `before_reads`,
+coordinator `submit_wheel_target`, climate `set_temperature`, options (`write_enabled`,
+`writable_zones`), diagnostics (recent commands). Remaining: approved hardware write test, lock
+writes after delayed-status validation, cooling writes after a cooling run, economy semantics.

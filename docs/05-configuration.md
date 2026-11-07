@@ -12,5 +12,7 @@ If mode/preset is unknown, target is unavailable rather than guessed. A requeste
 
 Setup: enter endpoint → read-only connectivity → explicit unit IDs or bounded user-approved read-only discovery → select/name zones → calibration → create read-only entry. Options cover polling, names, diagnostics and calibration. Transport safety defaults (one request/s, 15-register and 16-coil caps) are advanced settings with conservative bounds and warnings; normal users should not tune them. Reconfigure endpoint/unit IDs read-only. Enabling writes requires a separate warning/acknowledgement; MVP permits only validated wheel and optional lock writes. The UI states that commands take effect at the next poll and may be superseded by a newer pending command.
 
+Write options (implemented): `write_enabled` (default off) and `writable_zones` (explicit list, default empty); write mode needs at least one zone. With writing on, a zone in the list gets a settable comfort target in heating (step `wheel_step_heat`, range neutral ±6 steps); the value is queued, sent as one wheel register at the start of the next poll cycle and shown only after the read-back. Targets that are not a whole wheel step, economy, cooling and off zones are rejected. Queued commands expire after 2 poll intervals and are dropped on reconnect.
+
 Observed H/C selects the active scale but never triggers automatic physical mode switching. Conflicting global/zone bits block ambiguous target writes and produce diagnostics.
 

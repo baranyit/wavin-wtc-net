@@ -191,6 +191,17 @@ class GatewayTransport:
 
     # -- internals ------------------------------------------------------------------
 
+    def _validate_request(self, unit_id: int, address: int, count: int) -> int:
+        """Unit and wire-address validation shared by every request kind."""
+        try:
+            validate_unit_id(unit_id)
+        except ValueError as err:
+            raise WtcRequestRejectedError(str(err)) from err
+        wire_address = address + self._settings.address_offset
+        if wire_address < 0 or wire_address + count - 1 > MAX_PROTOCOL_ADDRESS:
+            raise WtcRequestRejectedError(f"address range {wire_address}+{count} out of range")
+        return wire_address
+
     def _validate(self, table: Table, unit_id: int, address: int, count: int) -> int:
         try:
             validate_unit_id(unit_id)

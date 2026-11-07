@@ -36,19 +36,22 @@
     "step": {
       "init": {
         "title": "Polling",
-        "description": "The minimum poll interval for this setup is {minimum} s. Changing the maximum gap is an advanced setting: it only changes how unused addresses are bridged, never what is written (nothing is).",
+        "description": "The minimum poll interval for this setup is {minimum} s. Changing the maximum gap is an advanced setting: it only changes how unused addresses are bridged, never what is written (nothing is). Writing: when enabled, a target set in Home Assistant is sent as one wheel register to the selected zones only, at the start of the next poll, and shown once confirmed by the following read. Nothing is written otherwise.",
         "data": {
           "poll_interval": "Poll interval (s)",
           "max_gap": "Maximum address gap bridged per read (0-8)",
           "neutral_heat": "Heating neutral temperature (°C), wheel centre",
           "neutral_cool": "Cooling neutral temperature (°C), wheel centre",
           "wheel_step_heat": "Heating wheel step (°C per position)",
-          "wheel_step_cool": "Cooling wheel step (°C per position)"
+          "wheel_step_cool": "Cooling wheel step (°C per position)",
+          "write_enabled": "Enable writing (experimental, off by default)",
+          "writable_zones": "Zones allowed to change their target"
         }
       }
     },
     "error": {
-      "interval_too_low": "The poll interval is below the minimum for this setup."
+      "interval_too_low": "The poll interval is below the minimum for this setup.",
+      "no_zone_selected": "Select at least one zone, or turn writing off."
     }
   },
   "issues": {
@@ -166,6 +169,11 @@
       "dew_point_input": {
         "name": "Dew point input"
       }
+    }
+  },
+  "exceptions": {
+    "command_rejected": {
+      "message": "Command rejected: {reason}"
     }
   }
 }

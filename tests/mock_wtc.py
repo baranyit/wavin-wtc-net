@@ -152,6 +152,7 @@ class MockWtcBackend:
         self.offline_units: set[int] = set()
         self.unreadable_registers: set[int] = set()
         self.connect_attempts = 0
+        self.ignore_writes = False  # device accepts the write but the read-back never changes
         self.max_in_flight = 0
         self._in_flight = 0
         self._connected = False
@@ -186,10 +187,43 @@ class MockWtcBackend:
     async def read_coils(self, unit_id: int, address: int, count: int) -> Sequence[bool]:
         return await self._read("read_coils", p.Table.COIL, unit_id, address, count)  # type: ignore[return-value]
 
-    # -- write spy: present so an accidental call would be recorded --------------------
+    # -- writes: recorded by the spy; applied like a device unless ``ignore_writes`` -----------
 
     async def write_register(self, unit_id: int, address: int, value: int) -> None:
-        self.writes.append(("write_register", unit_id, address, value))
+        start = self.clock.now
+        outcome = "ok"
+        try:
+            if not self._connected:
+                outcome = "not_connected"
+                raise ConnectionError("mock: not connected")
+            if self.in_outage():
+                self._connected = False
+                outcome = "reset"
+                raise ConnectionResetError("mock outage")
+            await self.clock.sleep(self.latency)
+            self.writes.append(("write_register", unit_id, address, value))
+            fault = next(
+                (
+                    f
+                    for f in self.faults
+                    if f.matches(unit_id, p.Table.HOLDING_REGISTER, address, 1)
+                ),
+                None,
+            )
+            if fault is not None:
+                fault.remaining -= 1
+                outcome = fault.kind
+                await self._apply_fault(fault, p.Table.HOLDING_REGISTER, 1)
+                return
+            if unit_id not in self.units or unit_id in self.offline_units:
+                outcome = "offline"
+                raise p_exception(GATEWAY_TARGET_FAILED)
+            if not self.ignore_writes:
+                self.units[unit_id].registers[address] = value
+        finally:
+            self.records.append(
+                RequestRecord(start, self.clock.now, "write_register", unit_id, address, 1, outcome)
+            )
 
     async def write_coil(self, unit_id: int, address: int, value: bool) -> None:
         self.writes.append(("write_coil", unit_id, address, value))

@@ -9,6 +9,7 @@ from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 
 from . import WtcConfigEntry
+from .commands import records_summary
 from .const import CONF_GATEWAY_ID
 
 TO_REDACT = {CONF_HOST, CONF_GATEWAY_ID, "unique_id"}
@@ -52,5 +53,12 @@ async def async_get_config_entry_diagnostics(
             "last_latency_s": stats.last_latency,
         },
         "skipped_cycles": coordinator.poller.skipped_cycles,
+        "write_mode": {
+            "enabled": coordinator.executor is not None,
+            "pending": coordinator.executor.queue.pending_count if coordinator.executor else 0,
+            "recent_commands": records_summary(coordinator.executor.queue.history)
+            if coordinator.executor
+            else [],
+        },
         "units": units,
     }

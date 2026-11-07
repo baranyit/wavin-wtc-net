@@ -1,6 +1,6 @@
 # Architecture
 
-Use one config entry/runtime per TCP endpoint. It owns one async client and serialized queue shared by controller unit IDs. Suggested modules: `transport.py` (PyModbus/timeouts/backoff), `protocol.py` (pure addresses/codecs), `models.py` (snapshots), `client.py` (read-only snapshot and explicit commands), `commands.py` (permission/debounce/verification), `coordinator.py`, config flow, entities, diagnostics and translations.
+Use one config entry/runtime per TCP endpoint. It owns one async client and serialized queue shared by controller unit IDs. Suggested modules: `transport.py` (PyModbus/timeouts/backoff), `protocol.py` (pure addresses/codecs), `models.py` (snapshots), `client.py` (read-only snapshot and explicit commands), `commands.py` (permission/validation/queue/verification), `write_transport.py` + `write_backend.py` (the only write route, a transport subclass constructed only with write mode on), `polarity.py`, `coordinator.py`, config flow, entities, diagnostics and translations.
 
 ```text
 GatewayRuntime(host,port)

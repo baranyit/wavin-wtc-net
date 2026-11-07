@@ -1,19 +1,25 @@
-"""Read-only climate entities, one per zone.
+"""Climate entities, one per zone.
 
-No target temperature and no controls yet: the wheel formula is validated in plan step 4 and
-commands arrive in plan step 5. State comes from the last polled snapshot only.
+State comes from the last polled snapshot only, never from a command. A zone gets a settable
+comfort target only when write mode is on and the zone is explicitly enabled; the value is queued
+and sent at the start of the next poll cycle, then confirmed by that cycle's read-back.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import ClimateEntityFeature, HVACAction, HVACMode
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import WtcConfigEntry
-from .const import CONF_UNITS, COOLING, ON_OFF_ON
+from .calibration import zone_effective_target
+from .commands import CommandRejectedError
+from .const import CONF_UNITS, COOLING, DOMAIN, ON_OFF_ON
 from .entity import WtcEntity
 
 PARALLEL_UPDATES = 0
@@ -38,6 +44,49 @@ class WtcZoneClimate(WtcEntity, ClimateEntity):
 
     def __init__(self, entry: WtcConfigEntry, unit_id: int, zone: int) -> None:
         super().__init__(entry, unit_id, zone, "climate")
+        coordinator = entry.runtime_data.coordinator
+        self._calibration = coordinator.calibration
+        executor = coordinator.executor
+        self._writable = executor is not None and executor.permissions.allows(unit_id, zone)
+        if self._writable:
+            scale = self._calibration.scale(cooling=False)
+            self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+            self._attr_target_temperature_step = scale.step
+            neutral = self._calibration.neutral(cooling=False)
+            self._attr_min_temp = neutral + (scale.min_code - scale.center_code) * scale.step
+            self._attr_max_temp = neutral + (scale.max_code - scale.center_code) * scale.step
+
+    @property
+    def target_temperature(self) -> float | None:
+        zone = self.zone_snapshot
+        return zone_effective_target(zone, self._calibration) if zone else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        executor = self.coordinator.executor
+        if not self._writable or executor is None or self._zone is None:
+            return None
+        record = executor.queue.latest(self._unit_id, self._zone)
+        if record is None:
+            return None
+        return {
+            "last_command_target": record.command.target,
+            "last_command_status": record.status.value,
+            "last_command_detail": record.detail,
+        }
+
+    async def async_set_temperature(self, **kwargs: Any) -> None:
+        """Queue only. The write happens at the next scheduled cycle; state changes on read-back."""
+        if (target := kwargs.get(ATTR_TEMPERATURE)) is None or self._zone is None:
+            return
+        try:
+            self.coordinator.submit_wheel_target(self._unit_id, self._zone, float(target))
+        except CommandRejectedError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="command_rejected",
+                translation_placeholders={"reason": str(err)},
+            ) from err
 
     @property
     def _is_on(self) -> bool | None:
