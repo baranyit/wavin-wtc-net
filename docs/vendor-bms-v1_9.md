@@ -55,7 +55,7 @@ to its physical inputs. Factory default is master-thermostat-driven.
 
 ## Follow-ups (not done yet)
 
-- Re-grade confidence in `docs/02-protocol-specification.md` and `AGENTS.md` §6: setpoints 4178+,
+- Done 2026-11-07 (evidence table in `docs/02-protocol-specification.md`, `AGENTS.md` §6): re-grade of setpoints 4178+,
   4700+, packed wheel 4600–4603, wheel difference (B+3), firmware/serial, lock status/commands and
   zone H/C control are now vendor-documented. Documented does not mean hardware-validated, so
   keep writes off until plan step 4.
@@ -64,5 +64,5 @@ to its physical inputs. Factory default is master-thermostat-driven.
 - Open question "BMS timeout": answered for the documented configuration (above); the safe
   value and whether this installation uses DI/BUS mode are still unknown. No keepalive stays
   the rule.
-- Decision 4 (reference-only addresses in required requests) and decision 5 (polarity) should be
-  revisited against this file.
+- Decisions 4 and 5 were revisited: decision 5 is confirmed by the hardware run (status = control
+  bits); decision 4 keeps the code-level `both` / `reference-only` split.

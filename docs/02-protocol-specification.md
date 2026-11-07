@@ -1,6 +1,6 @@
 # Modbus protocol specification
 
-Confidence: **both** means corroborated by Python and HomeGate; **reference-only** needs hardware/vendor confirmation.
+Confidence: **both** means corroborated by Python and HomeGate; **reference-only** means only the Python reference listed it. Since 2026-11-07 two more evidence sources exist: the vendor BMS document (`vendor-bms-v1_9.md`, "vendor") and the first read-only hardware run (`hardware-validation-2026-11-07.md`, "hw"). The per-address evidence is in the table in "Evidence status" below. The `Confidence` enum in code still means only "both vs reference-only" (it drives the read fallback and write eligibility) and is deliberately not changed by this re-grade.
 
 ## Transport
 
@@ -42,6 +42,30 @@ Global: 4127 on/off, 4128 comfort/economy, 4129 heat/cool (both). Reference-only
 Zone status `S=4130+8×(z−1)`: DRY, OUT/valve, condensation, DWP input, on/off, comfort/economy, heat/cool, live. Offsets 0–3,6,7 are corroborated; 4–5 are reference-only.
 
 Writable zone base `C=4604+8×(z−1)`: on/off, comfort/economy, heat/cool. HomeGate corroborates the first two. Lock command is `4656+(z−1)`; candidate authoritative delayed status is `4186+(z−1)`.
+
+## Evidence status (2026-11-07)
+
+"vendor" = documented in the vendor BMS document; "hw read" = read on the real installation with plausible values; "hw dial" = value checked against the physical thermostat. Documented or read does not mean writable: every write path still needs its own approved test.
+
+| Address(es) | Vendor | Hardware | Note |
+|---|---|---|---|
+| 4121, 4135, zone B+0..B+2 | yes | hw read | corroborated by all sources |
+| 4127, 4128, 4132, 4133, 4134 | yes | hw read | not compared with a physical value |
+| 4500 firmware | yes (1.08 = 1008) | hw read: 1011 on both units | decimal interpretation holds |
+| 4501–4502 serial | yes (L-word, H-word) | hw read: distinct per unit | identity use still waits for a stability check |
+| zone B+3 wheel offset | yes (0.1 °C signed) | hw dial: comfort heat 3 zones | economy: wheel not applied |
+| zone B+4, B+5 | yes | hw read | not checked |
+| 4600–4603 packed wheel | yes (L/H byte) | hw read: low byte = odd zone, high = even zone | matches 4604+ codes |
+| 4604+(z−1) wheel code | yes (0..12) | hw read, dial 6 = center, 0.5 °C/code | writable, not yet written |
+| 4178+3(z−1)+1, +2 comfort/economy heat | yes (read/write) | hw dial: 22 and 17 confirmed | |
+| 4178+3(z−1)+0, 4700+ cooling setpoints | yes | hw read: 26 / 30 | no cooling dial check |
+| zone status offsets 4, 5 | yes | hw read: equal to control coils 0, 1 | |
+| zone status 0–3, 6, 7 | yes | hw read | cooling polarity not seen live |
+| zone control coils +0, +1 | yes | hw read | |
+| zone control coil +2 (heat/cool) | yes, but no effect in slave mode; use 4129 | hw read | do not write |
+| global coils 4127–4129 | yes | hw read | |
+| coils 4120, 4121, 4125, 4126 | yes (outputs, emergency, sensor error) | hw read: all false | |
+| lock status 4186+, command 4656+ | yes (locked = 1) | hw read: all unlocked | delay untested |
 
 ## Safety contract
 

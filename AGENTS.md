@@ -97,8 +97,10 @@ Breaking any of these blocks the change, even when the tests pass.
 
 Addresses use offset 0 (an advanced offset exists for diagnostics only). Holding registers and coils
 are **separate address spaces**: e.g. register 4604 and coil 4604 are different things.
-"both" = corroborated by both sources; "ref-only" = needs hardware or vendor confirmation. Never
-build write paths on ref-only addresses.
+"both" = corroborated by both sources; "ref-only" = only the Python reference listed it. Vendor
+document and first hardware run add evidence: see `docs/02-protocol-specification.md` "Evidence status".
+The code `Confidence` enum is unchanged. Never build write paths on addresses without an approved
+hardware test, whatever their label.
 
 **Registers**
 - 4121 water temp, signed ×0.1 °C (both) · 4135 mode 0 init / 1 heat / 2 cool / 3 changeover (both)
@@ -107,7 +109,7 @@ build write paths on ref-only addresses.
 - `0xFFFF` / `0xFFFE` = invalid sentinel.
 - Zone `z` (1…7): `B = 4136 + 6·(z−1)`. B+0 temp, B+1 RH, B+2 dew point (both); B+3 wheel offset,
   B+4 dew-point resistance, B+5 illuminance (ref-only).
-- Setpoints (ref-only, **read-only**): `4178 + 3·(z−1)` comfort cool / +1 comfort heat / +2 economy
+- Setpoints (vendor-documented, hw-read; **read-only for us**): `4178 + 3·(z−1)` comfort cool / +1 comfort heat / +2 economy
   heat; `4700 + (z−1)` economy cool. The reference's ±1 °C compensation is **not** protocol truth.
 - Wheel: 4600–4603 packed read-only codes (ref-only); `4604 + (z−1)` writable wheel code (both).
 
