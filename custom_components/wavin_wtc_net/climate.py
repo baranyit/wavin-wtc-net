@@ -49,12 +49,27 @@ class WtcZoneClimate(WtcEntity, ClimateEntity):
         executor = coordinator.executor
         self._writable = executor is not None and executor.permissions.allows(unit_id, zone)
         if self._writable:
-            scale = self._calibration.scale(cooling=False)
             self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
-            self._attr_target_temperature_step = scale.step
-            neutral = self._calibration.neutral(cooling=False)
-            self._attr_min_temp = neutral + (scale.min_code - scale.center_code) * scale.step
-            self._attr_max_temp = neutral + (scale.max_code - scale.center_code) * scale.step
+
+    @property
+    def _cooling(self) -> bool:
+        return self.hvac_mode is HVACMode.COOL
+
+    @property
+    def target_temperature_step(self) -> float:
+        return self._calibration.scale(cooling=self._cooling).step
+
+    @property
+    def min_temp(self) -> float:
+        scale = self._calibration.scale(cooling=self._cooling)
+        neutral = self._calibration.neutral(cooling=self._cooling)
+        return neutral + (scale.min_code - scale.center_code) * scale.step
+
+    @property
+    def max_temp(self) -> float:
+        scale = self._calibration.scale(cooling=self._cooling)
+        neutral = self._calibration.neutral(cooling=self._cooling)
+        return neutral + (scale.max_code - scale.center_code) * scale.step
 
     @property
     def target_temperature(self) -> float | None:

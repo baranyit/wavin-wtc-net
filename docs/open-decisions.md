@@ -210,8 +210,7 @@ are on). Approval for a read-only integration test run against `192.168.1.210:50
 
 Option chosen: accept from the vendor document and HomeGate without a hardware measurement. The
 installation is in heating season. Cooling polarity stays as in decision 5. The cooling target
-formula stays configurable and testable, but **no cooling target write is built** until a cooling
-read-only run confirms it. Revisit when the installation switches to cooling.
+formula stays configurable and testable, and **no cooling target write was built** at that time (superseded by decision 11). Revisit when the installation switches to cooling.
 
 **Update 2026-11-07 (same day, maintainer):** the cooling comfort target is closed by rule. It works
 exactly like heating with its own centre value: `neutral_cool + (code - 6) x wheel_step_cool`
@@ -235,7 +234,7 @@ the enum when the command layer needs it.
 ## 9. Wheel formula (decided 2026-11-07)
 
 Three dial checks suffice for heating: comfort target = comfort setpoint + (code − 6) × 0.5 °C;
-economy target = economy setpoint (wheel not applied). Cooling is untested (decision 6).
+economy target = economy setpoint (wheel not applied). Cooling follows the same rule by decision 6/11 (not measured).
 Details: `docs/hardware-validation-2026-11-07.md`. Open: why the vendor says nothing about the step
 size, and whether other thermostat models differ.
 
@@ -244,8 +243,8 @@ size, and whether other thermostat models differ.
 
 Choices made by the implementer within the maintainer's rules; revisit with hardware evidence.
 
-- **Scope:** wheel comfort target in heating only. Economy (wheel has no effect), cooling (decision
-  6: not validated), off or not-live zones are rejected locally. Lock writes are not built.
+- **Scope:** wheel comfort target, heating and (decision 11) cooling. Economy (wheel has no
+  effect), off or not-live zones are rejected locally. Lock writes are not built.
 - **One write route:** `WritableGatewayTransport.write_wheel_code` writes one register in
   4604..4610 with a value 0..12 (function code 06) and nothing else. It exists only if write mode
   is on and at least one zone is selected; otherwise the read-only transport class is used.
@@ -262,3 +261,29 @@ Choices made by the implementer within the maintainer's rules; revisit with hard
   and was restored. A second run confirmed that a physical dial turn after a write takes effect and
   polling does not undo it. Still open: persistence over a power cycle (vendor: BMS-written values
   last until power cycle).
+
+## 11. Cooling comfort writes (decided 2026-11-07, supersedes the write part of decision 6)
+
+The maintainer opens cooling comfort writes now, by rule and without a cooling measurement:
+`neutral_cool + (code - 6) x wheel_step_cool` (this installation 26 °C, 0.5 °C), the same single
+wheel register and the same queue/verify path as heating. Risk accepted: cooling polarity
+(`heat_cool` True = cooling) rests on the vendor document and HomeGate, not on a live observation;
+a cooling read-only run in the cooling season should still confirm it. Economy cooling stays
+rejected (decision 14). `RejectReason.COOLING_UNVALIDATED` is removed.
+
+## 12. Other zones (decided 2026-11-07)
+
+The one-zone hardware write test (Dolgozó, unit 2 zone 2) is accepted as proof for the mechanism;
+the other nine zones are not tested separately. Any zone can be enabled in the options. Docs state
+that only Dolgozó was exercised on hardware.
+
+## 13. Lock writes (decided 2026-11-07)
+
+One-zone hardware test first (separate approval and zone choice, lock on / delayed status
+observation / lock off), then a lock entity with the same queue and read-back if the status and its
+delay are clear; otherwise lock stays read-only. Not built yet.
+
+## 14. Economy (decided 2026-11-07)
+
+Stays read-only. The economy heating target is shown, the integration does not set it.
+Economy setpoint writes (4178+3(z-1)+2) and economy cooling are not built.
