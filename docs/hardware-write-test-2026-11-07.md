@@ -25,5 +25,19 @@ Findings:
   (22 + (code − 6) × 0.5: 24 → 23.5 → 24).
 - Physical display (maintainer): the thermostat showed 23.5 °C after the write and returned to
   24 °C after the restore. So the written code is the dial position the thermostat uses.
-- Not tested: a physical dial turn after a write, power-cycle persistence (vendor: BMS-written
-  values last until power cycle), other zones, economy, cooling, lock.
+- Not tested: power-cycle persistence (vendor: BMS-written values last until power cycle), other
+  zones, economy, cooling, lock.
+
+## Second run: physical dial turn after a write (23:34-23:46)
+
+Same zone and step (10 → 9), approved again by the maintainer; then 5 read-only cycles while the
+maintainer turned the physical dial from the displayed 23.5 °C to 24.5 °C (two steps). 301
+requests, 0 failures, 2 writes (step and restore), both confirmed.
+
+- After the turn the read-back showed code 11, offset +2.5, packed word 2822 (0x0B06), and stayed
+  there for all 5 cycles. Polling did not undo the dial change and sent no write (the only writes
+  were the step before and the restore after the window).
+- So after a BMS-style register write the physical dial still takes effect, and "physical dial
+  changes win" (AGENTS §4.9) holds on this hardware.
+- The restore wrote code 10 over the hand-set code 11, as designed (the test restores the approved
+  starting state); the display returned to 24 °C.
