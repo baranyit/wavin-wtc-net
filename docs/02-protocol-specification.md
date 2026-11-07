@@ -61,7 +61,7 @@ Writable zone base `C=4604+8×(z−1)`: on/off, comfort/economy, heat/cool. Home
 | 4178+3(z−1)+0, 4700+ cooling setpoints | yes | hw read: 26 / 30 | no cooling dial check |
 | zone status offsets 4, 5 | yes | hw read: equal to control coils 0, 1 | |
 | zone status 0–3, 6, 7 | yes | hw read | cooling polarity not seen live |
-| zone control coils +0, +1 | yes | hw read | |
+| zone control coils +0, +1 | yes | hw write: on/off and comfort/economy changed, status followed in the same cycle (Dolgozó) | |
 | zone control coil +2 (heat/cool) | yes, but no effect in slave mode; use 4129 | hw read | do not write |
 | global coils 4127–4129 | yes | hw read | |
 | coils 4120, 4121, 4125, 4126 | yes (outputs, emergency, sensor error) | hw read: all false | |
