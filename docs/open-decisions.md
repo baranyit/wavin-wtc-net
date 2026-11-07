@@ -316,6 +316,10 @@ zones. The effect may depend on the Configurator settings (vendor), so a one-zon
 (`tests/hardware/test_mode_validation.py`, per kind, separate approval) is still required before
 the feature counts as validated.
 
+**Hardware result (2026-11-08):** both kinds passed on Dolgozó, see
+`docs/hardware-mode-test-2026-11-08.md`: change and restore confirmed within the writing cycle,
+nothing else changed. Zone on/off and preset writes are validated for this installation.
+
 ## 17. Identity (decided 2026-11-07)
 
 Stays the generated gateway ID + unit + zone. The serial (4501-4502) is shown in device info and
