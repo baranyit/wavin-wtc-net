@@ -293,6 +293,9 @@ command coil itself is not read. The lock entity shows only the polled status.
 `docs/hardware-lock-test-2026-11-08.md`: lock and unlock both confirmed within the writing cycle,
 status address 4186+ confirmed. Lock writes are accepted for the MVP.
 
+Observed on the thermostat (second run, 2026-11-08): the lock symbol appears and its own
+controls are blocked while locked; unlocking restores them.
+
 ## 14. Economy (decided 2026-11-07)
 
 Stays read-only. The economy heating target is shown, the integration does not set it.

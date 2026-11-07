@@ -13,6 +13,8 @@ Sequence, all through the integration's own writable transport, queue and poller
 3. queue "unlock", observe until the status shows unlocked;
 4. always end unlocked: if still locked, one more unlock is queued.
 
+Optional ``WTC_LOCK_HOLD_CYCLES=N`` keeps the zone locked for N more read-only cycles (prints
+``LOCKED_NOW``) so the maintainer can observe the thermostat.
 Cycles run on the poll grid (start to start = the poll interval, not interval after finish).
 At most 3 writes (lock, unlock, one emergency unlock). The human watches the thermostat.
 """
@@ -142,6 +144,13 @@ async def test_lock_one_zone_and_unlock() -> None:
         started = True
         await tick()
         snapshot, locked_after_cycles = await wait_for(True, "1 lock")
+        hold = int(os.environ.get("WTC_LOCK_HOLD_CYCLES", "0"))
+        if hold:
+            # Stay locked (no writes) so the human can look at the thermostat.
+            print(f"\nLOCKED_NOW {time.strftime('%H:%M:%S')}: look at the thermostat", flush=True)
+            for n in range(hold):
+                await tick()
+                snapshot = await cycle(f"1.{n + 1} hold locked")
         queue_lock(snapshot, False)
         await tick()
         snapshot, unlocked_after_cycles = await wait_for(False, "2 unlock")

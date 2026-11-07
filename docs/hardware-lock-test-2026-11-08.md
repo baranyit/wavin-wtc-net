@@ -22,5 +22,17 @@ Findings:
   lag cannot be measured without extra out-of-cycle reads, which the safety rules forbid; the
   4-cycle verification window is therefore generous.
 - 4186+(z-1) works as the lock status address for this installation (it changed with the command).
-- Not recorded: the physical thermostat behaviour while locked (no report from the maintainer
-  yet), other zones, persistence over a power cycle.
+- Not tested: other zones, persistence over a power cycle.
+
+## Second run: thermostat behaviour while locked (00:34-00:37)
+
+Same zone and sequence, with a hold window (`WTC_LOCK_HOLD_CYCLES=2`) so the maintainer could look
+at the thermostat. 203 s, 2 writes (lock, unlock), both confirmed, zone ended unlocked.
+
+- Lock queued 00:34:35, visible in the read-back (status coil) at 00:35:17, zone held locked for
+  two more read-only cycles, unlock queued 00:36:44, read-back unlocked.
+- Physical thermostat (maintainer): the lock symbol appeared, and the operation on the thermostat
+  (dial/buttons) was blocked while locked ("tiltva"); after the unlock the thermostat was usable
+  again.
+- So lock = child lock of the thermostat's own controls; Home Assistant/BMS writes are not
+  affected. The earlier first run did not record the display; this closes that open point.
