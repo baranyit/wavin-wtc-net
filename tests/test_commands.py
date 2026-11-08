@@ -53,9 +53,13 @@ class Rig:
             self.client,
             interval=60,
             clock=self.clock,
-            before_reads=self.executor.before_reads,
             on_snapshot=self.executor.verify,
         )
+        self.executor.cycle_index = lambda: self.poller.cycles_started
+
+    async def flush(self) -> None:
+        """Write what the debounce would write (the dispatcher timing is tested separately)."""
+        await self.executor.flush()
 
     async def cycle(self) -> GatewaySnapshot:
         snapshot = await self.poller.run_cycle()
@@ -208,7 +212,7 @@ async def test_global_master_bits_do_not_block_the_target() -> None:
 # -- queue and cycle ordering -----------------------------------------------------------------
 
 
-async def test_submit_causes_no_traffic_and_state_is_not_optimistic() -> None:
+async def test_submit_causes_no_traffic_and_shows_the_requested_value_optimistically() -> None:
     rig = Rig()
     snapshot = await rig.cycle()
     before = len(rig.backend.records)
@@ -216,26 +220,78 @@ async def test_submit_causes_no_traffic_and_state_is_not_optimistic() -> None:
     assert record.status is CommandStatus.QUEUED
     assert len(rig.backend.records) == before  # nothing sent, no focused re-read
     assert rig.backend.writes == []
-    assert snapshot.unit(2).zone(2).wheel_code == 7  # type: ignore[union-attr]
+    assert snapshot.unit(2).zone(2).wheel_code == 7  # type: ignore[union-attr]  # snapshot is real
+    pending = rig.queue.optimistic(2, 2)
+    assert pending is not None and pending.target == 22.0  # what the entity shows
 
 
-async def test_write_is_flushed_before_the_reads_of_the_next_cycle_and_confirmed() -> None:
+async def test_write_is_sent_by_the_flush_and_confirmed_by_the_next_cycle() -> None:
     rig = Rig()
     snapshot = await rig.cycle()
     rig.clock.now += 60
     rig.submit(2, 2, 22.0, snapshot)
-    after = await rig.cycle()
-    cycle_ops = rig.backend.records[-(len(rig.backend.records) - 29) :]  # cycle 2 only
-    assert cycle_ops[0].op == "write_register"
-    assert all(r.op != "write_register" for r in cycle_ops[1:])
+    before = len(rig.backend.records)
+    await rig.flush()
+    assert [r.op for r in rig.backend.records[before:]] == ["write_register"]  # no targeted read
     assert rig.backend.writes == [("write_register", 2, CODE_REG(2), 6)]
+    record = rig.queue.latest(2, 2)
+    assert record is not None and record.status is CommandStatus.SENT
+    assert rig.queue.optimistic(2, 2) is not None  # still shown until a read decides
+    rig.clock.now += 60
+    after = await rig.cycle()
     assert after.unit(2).zone(2).wheel_code == 6  # type: ignore[union-attr]
     record = rig.queue.latest(2, 2)
     assert record is not None and record.status is CommandStatus.CONFIRMED
+    assert rig.queue.optimistic(2, 2) is None
     # not written again in later cycles (no replay)
     rig.clock.now += 60
     await rig.cycle()
     assert len(rig.backend.writes) == 1
+
+
+async def test_cycle_running_at_write_time_is_ignored_for_verification() -> None:
+    """A write that lands inside a running cycle: that cycle's reads may predate the write."""
+    rig = Rig()
+    snapshot = await rig.cycle()
+    rig.submit(2, 2, 22.0, snapshot)
+    # Emulate "a cycle (number 2) started, the write happened during it, it finished with old data".
+    rig.poller.cycles_started += 1
+    await rig.flush()
+    stale = replace_zone_code(snapshot, 2, 2, 7)
+    rig.executor.verify(stale)  # cycle 2: written during it -> not counted, no timeout
+    record = rig.queue.latest(2, 2)
+    assert record is not None and record.status is CommandStatus.SENT
+    waiting = rig.queue._awaiting[rig.queue.latest(2, 2).command.key]  # type: ignore[union-attr]
+    assert waiting.cycles_left == rig.queue.verify_cycles and waiting.overlay
+    rig.poller.cycles_started += 1  # the next cycle started after the write
+    rig.executor.verify(stale)  # a real post-write mismatch counts and ends the overlay
+    assert rig.queue.optimistic(2, 2) is None
+    assert waiting.cycles_left == rig.queue.verify_cycles - 1
+
+
+def replace_zone_code(
+    snapshot: GatewaySnapshot, unit: int, zone: int, code: int
+) -> GatewaySnapshot:
+    return _with_zone(snapshot, unit, zone, wheel_code=code)
+
+
+async def test_newer_command_during_the_flush_owns_the_key() -> None:
+    rig = Rig()
+    snapshot = await rig.cycle()
+    rig.submit(2, 2, 22.0, snapshot)
+    commands = rig.queue.take_pending()
+    assert rig.queue.optimistic(2, 2) is commands[0]  # visible while it is being sent
+    newer = rig.submit(2, 2, 23.0, snapshot)
+    await rig.executor._send(commands[0])  # the older one was already on its way
+    latest = rig.queue.latest(2, 2)
+    assert latest is not None and latest.command.command_id == newer.command.command_id
+    assert latest.status is CommandStatus.QUEUED
+    assert any(
+        r.command.command_id == commands[0].command_id and r.status is CommandStatus.SUPERSEDED
+        for r in rig.queue.history
+    )
+    pending = rig.queue.optimistic(2, 2)
+    assert pending is not None and pending.target == 23.0
 
 
 async def test_latest_value_wins_and_only_one_zone_register_is_written() -> None:
@@ -245,7 +301,7 @@ async def test_latest_value_wins_and_only_one_zone_register_is_written() -> None
     rig.submit(2, 2, 21.0, snapshot)
     rig.submit(1, 3, 22.5, snapshot)
     assert rig.queue.pending_count == 2
-    await rig.cycle()
+    await rig.flush()
     assert rig.backend.writes == [
         ("write_register", 1, CODE_REG(3), 7),
         ("write_register", 2, CODE_REG(2), 4),
@@ -263,6 +319,7 @@ async def test_writes_respect_the_one_request_per_second_limit() -> None:
     snapshot = await rig.cycle()
     for zone in range(1, 5):
         rig.submit(2, zone, 22.0, snapshot)
+    await rig.flush()
     await rig.cycle()
     starts = [r.start for r in rig.backend.records]
     assert all(b - a >= 1.0 - 1e-9 for a, b in itertools.pairwise(starts))
@@ -273,9 +330,11 @@ async def test_read_back_lag_then_timeout_without_rewrite() -> None:
     rig.backend.ignore_writes = True  # device accepts the write but the value never changes
     snapshot = await rig.cycle()
     rig.submit(2, 2, 22.0, snapshot)
+    await rig.flush()
     await rig.cycle()
     record = rig.queue.latest(2, 2)
     assert record is not None and record.status is CommandStatus.SENT  # still waiting
+    assert rig.queue.optimistic(2, 2) is None  # but the real (unchanged) value is shown again
     await rig.cycle()
     record = rig.queue.latest(2, 2)
     assert record is not None and record.status is CommandStatus.TIMEOUT
@@ -287,6 +346,7 @@ async def test_physical_dial_change_wins_over_stale_command_state() -> None:
     rig = Rig()
     snapshot = await rig.cycle()
     rig.submit(2, 2, 22.0, snapshot)
+    await rig.flush()
     await rig.cycle()  # confirmed at code 6
     rig.backend.units[2].registers[CODE_REG(2)] = 9  # somebody turns the physical dial
     after = await rig.cycle()
@@ -298,8 +358,8 @@ async def test_expired_command_is_dropped_without_traffic() -> None:
     rig = Rig(ttl=30.0)
     snapshot = await rig.cycle()
     rig.submit(2, 2, 22.0, snapshot)
-    rig.clock.now += 60  # next tick is later than the expiry
-    await rig.cycle()
+    rig.clock.now += 60  # the flush is later than the expiry
+    await rig.flush()
     assert rig.backend.writes == []
     record = rig.queue.latest(2, 2)
     assert record is not None and record.status is CommandStatus.TIMEOUT
@@ -312,7 +372,7 @@ async def test_no_replay_after_reconnect() -> None:
     rig.submit(2, 2, 22.0, snapshot)
     rig.backend._connected = False  # connection lost between submit and flush
     rig.clock.now += 5
-    await rig.cycle()
+    await rig.flush()
     assert rig.backend.writes == []
     record = rig.queue.latest(2, 2)
     assert record is not None and record.status is CommandStatus.TIMEOUT
@@ -326,6 +386,7 @@ async def test_device_exception_is_rejected_and_reads_continue() -> None:
         Fault("exception", unit_id=2, table=p.Table.HOLDING_REGISTER, address=CODE_REG(2))
     )
     rig.submit(2, 2, 22.0, snapshot)
+    await rig.flush()
     after = await rig.cycle()
     record = rig.queue.latest(2, 2)
     assert record is not None and record.status is CommandStatus.REJECTED
@@ -339,6 +400,7 @@ async def test_transport_failure_marks_transport_error() -> None:
         Fault("disconnect", unit_id=2, table=p.Table.HOLDING_REGISTER, address=CODE_REG(2))
     )
     rig.submit(2, 2, 22.0, snapshot)
+    await rig.flush()
     await rig.cycle()
     record = rig.queue.latest(2, 2)
     assert record is not None and record.status is CommandStatus.TRANSPORT_ERROR
@@ -424,6 +486,7 @@ async def test_cooling_target_is_written_and_confirmed() -> None:
     snapshot = await rig.cycle()
     rig.clock.now += 60
     rig.submit(2, 2, 26.5, snapshot)
+    await rig.flush()
     await rig.cycle()
     assert rig.backend.writes == [("write_register", 2, CODE_REG(2), 7)]
     record = rig.queue.latest(2, 2)
@@ -487,16 +550,18 @@ async def test_lock_permission_is_separate_from_wheel_permission() -> None:
     assert off_err.value.reason is RejectReason.WRITE_DISABLED
 
 
-async def test_lock_is_queued_then_written_as_a_single_coil_before_the_reads() -> None:
+async def test_lock_is_queued_then_written_as_a_single_coil_and_confirmed_by_the_next_cycle() -> (
+    None
+):
     rig = Rig(LOCK_RIG)
     snapshot = await rig.cycle()
     rig.clock.now += 60
     before = len(rig.backend.records)
     _submit_lock(rig, 1, 4, True, snapshot)
     assert len(rig.backend.records) == before and rig.backend.writes == []
+    await rig.flush()
+    assert [r.op for r in rig.backend.records[before:]] == ["write_coil"]  # no targeted read
     after = await rig.cycle()
-    cycle_ops = rig.backend.records[before:]
-    assert cycle_ops[0].op == "write_coil" and all(r.op != "write_coil" for r in cycle_ops[1:])
     assert rig.backend.writes == [("write_coil", 1, LOCK_COIL(4), True)]
     assert after.unit(1).zone(4).lock_status is True  # type: ignore[union-attr]
     record = rig.queue.latest(1, 4, CommandKind.LOCK)
@@ -511,9 +576,11 @@ async def test_lagging_lock_status_is_confirmed_by_a_later_cycle_without_rewrite
     snapshot = await rig.cycle()
     rig.clock.now += 60
     _submit_lock(rig, 1, 4, True, snapshot)
+    await rig.flush()
     await rig.cycle()
     record = rig.queue.latest(1, 4, CommandKind.LOCK)
     assert record is not None and record.status is CommandStatus.SENT  # status still lags
+    assert rig.queue.optimistic(1, 4, CommandKind.LOCK) is not None  # lag: keep showing the request
     for _ in range(3):  # confirmed within the verification window, never rewritten
         rig.clock.now += 60
         await rig.cycle()
@@ -530,6 +597,7 @@ async def test_lock_that_never_shows_up_times_out_after_four_cycles_with_one_wri
     rig.backend.ignore_writes = True
     snapshot = await rig.cycle()
     _submit_lock(rig, 1, 4, True, snapshot)
+    await rig.flush()
     for _ in range(3):
         rig.clock.now += 60
         await rig.cycle()
@@ -565,7 +633,7 @@ def _submit_mode(rig: Rig, kind: CommandKind, value: bool, snapshot: GatewaySnap
 
 
 @pytest.mark.parametrize(("kind", "coil_offset"), [(POWER, 0), (PRESET, 1)])
-async def test_zone_mode_writes_one_control_coil_before_the_reads_and_confirms(
+async def test_zone_mode_writes_one_control_coil_and_the_next_cycle_confirms(
     kind: CommandKind, coil_offset: int
 ) -> None:
     rig = Rig(MODE_RIG)
@@ -574,9 +642,9 @@ async def test_zone_mode_writes_one_control_coil_before_the_reads_and_confirms(
     before = len(rig.backend.records)
     _submit_mode(rig, kind, False, snapshot)
     assert len(rig.backend.records) == before and rig.backend.writes == []
+    await rig.flush()
+    assert [r.op for r in rig.backend.records[before:]] == ["write_coil"]
     after = await rig.cycle()
-    cycle_ops = rig.backend.records[before:]
-    assert cycle_ops[0].op == "write_coil" and all(r.op != "write_coil" for r in cycle_ops[1:])
     address = p.zone_control_coil_base(2) + coil_offset
     assert rig.backend.writes == [("write_coil", 2, address, False)]
     zone = after.unit(2).zone(2)  # type: ignore[union-attr]
@@ -623,6 +691,7 @@ async def test_zone_mode_that_never_shows_up_times_out_after_three_cycles_with_o
     rig.backend.ignore_writes = True
     snapshot = await rig.cycle()
     _submit_mode(rig, POWER, False, snapshot)
+    await rig.flush()
     for _ in range(2):
         rig.clock.now += 60
         await rig.cycle()

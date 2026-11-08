@@ -82,9 +82,8 @@ async def test_one_zone_mode_change_and_restore() -> None:
     queue = CommandQueue(AsyncioClock(), ttl=interval * 3)
     permissions = CommandPermissions(True, frozenset(), frozenset(), frozenset({(unit, zone)}))
     executor = CommandExecutor(transport, queue, permissions)
-    poller = GatewayPoller(
-        client, interval=interval, before_reads=executor.before_reads, on_snapshot=executor.verify
-    )
+    poller = GatewayPoller(client, interval=interval, on_snapshot=executor.verify)
+    executor.cycle_index = lambda: poller.cycles_started
     log: list[dict[str, Any]] = []
     t0 = time.time()
     next_at = t0
@@ -124,7 +123,7 @@ async def test_one_zone_mode_change_and_restore() -> None:
         )
         return snapshot
 
-    def queue_value(snapshot: GatewaySnapshot, value: bool) -> None:
+    async def queue_value(snapshot: GatewaySnapshot, value: bool) -> None:
         print(f"\nQUEUED_{kind_text.upper()}_{value} at {time.strftime('%H:%M:%S')}", flush=True)
         validate_zone_mode(
             unit_id=unit, zone=zone, kind=kind, snapshot=snapshot, permissions=permissions
@@ -132,6 +131,7 @@ async def test_one_zone_mode_change_and_restore() -> None:
         queue.submit(
             queue.create(kind, unit, zone, value, int(value), transport.connection_generation)
         )
+        await executor.flush()  # written now (after the debounce in production)
 
     async def wait_for(want: bool, label: str) -> tuple[GatewaySnapshot, int | None]:
         snapshot = await cycle(f"{label} write + read-back")
@@ -154,11 +154,11 @@ async def test_one_zone_mode_change_and_restore() -> None:
             state.control_on_off,
             state.control_comfort_economy,
         ), "status and control bits disagree"
-        queue_value(snapshot, False)
+        await queue_value(snapshot, False)
         started = True
         await tick()
         snapshot, changed_after = await wait_for(False, "1 change")
-        queue_value(snapshot, True)
+        await queue_value(snapshot, True)
         await tick()
         snapshot, restored_after = await wait_for(True, "2 restore")
         restored = value_of(snapshot) is True
@@ -168,7 +168,7 @@ async def test_one_zone_mode_change_and_restore() -> None:
                 await tick()
                 snapshot = await cycle("3 pre-restore read")
                 if value_of(snapshot) is not True:
-                    queue_value(snapshot, True)
+                    await queue_value(snapshot, True)
                     await tick()
                     snapshot, _ = await wait_for(True, "4 emergency restore")
                 restored = value_of(snapshot) is True

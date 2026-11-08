@@ -71,8 +71,8 @@ Writable zone base `C=4604+8×(z−1)`: on/off, comfort/economy, heat/cool. Home
 
 - Reads and writes are separate APIs; polling can execute only explicitly queued user commands, never automatic corrective/configuration writes.
 - Write mode defaults off. Zone and controller-global permissions are separate.
-- Validate unit, zone, capability and raw range. A user command is queued, coalesced by target (latest value wins), and flushed at the start of the next scheduled poll cycle through the same one-request-per-second limiter.
-- After the queued writes, the normal read phase provides verification without an extra immediate request burst. It reports queued, sent, confirmed, superseded, timeout, rejected or transport error; never optimistic success.
+- Validate unit, zone, capability and raw range. A user command is queued, coalesced by target (latest value wins), and written after a 2 s debounce (restarted by each new command, bounded to 10 s) through the same one-request-per-second limiter and transport lock.
+- No read follows a write; the next normal read cycle that started after the write provides verification. It reports queued, sent, confirmed, superseded, timeout, rejected or transport error. Entities may show the requested value until that read decides (optimistic overlay, decision 22), but a command is only ever *confirmed* by a read.
 - No replay after reconnect/reload.
 - No BMS keepalive in MVP. Its timeout, reset semantics and safe value are unknown.
 

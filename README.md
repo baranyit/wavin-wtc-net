@@ -31,9 +31,11 @@ The WTC-NET is treated as a fragile device.
   (15 registers or 16 coils), cycles never overlap, timeouts and reconnects are bounded.
 - **Writing is opt-in** (see below), per zone and per kind, and the integration never writes
   anything on its own: no corrective writes, no keepalive, no global switches.
-- **No optimistic state.** A command is queued, sent at the start of the next poll cycle, and the
-  entity changes only after the following read confirms it. Commands expire and are never replayed
-  after a reconnect.
+- **Optimistic, but read-checked.** A command is shown at once, written after a 2 s quiet period
+  (every further command restarts it, so an automation touching many thermostats is sent as one
+  burst) and checked by the next poll. If the read shows something else (a dial turn, an ignored
+  write) the real value comes back. Commands expire and are never replayed after a reconnect or
+  reload.
 - **The thermostat wins.** Polling never undoes a change made on the physical dial.
 
 ## Installation

@@ -4,8 +4,8 @@
 
 - Unit: signed/sentinel scaling, every address boundary, packed wheel bytes, both candidate wheel formulas and 0.5 °C precision, capability precedence, identity and redaction.
 - Transport/mock Modbus: two units share one serialized endpoint; logical grouping and hard chunk caps; assert at least one second between request starts; malformed/short/error/timeout responses; reconnect/backoff; partial failure; supported PyModbus signatures; cycles never overlap.
-- Mandatory write spy: setup, snapshot reads, reconnect, diagnostics, unload and polling with an empty command queue must invoke zero writes. With queued commands, assert only the coalesced explicit writes occur before reads.
-- Commands: permission tiers, latest-value-wins coalescing/expiry, no traffic before the next cycle, writes ordered before reads, read-phase success/lag/mismatch/timeout, no optimistic state/replay, one-register zone effect, no global-coil side effect.
+- Mandatory write spy: setup, snapshot reads, reconnect, diagnostics, unload and polling with an empty command queue must invoke zero writes. With submitted commands, assert only the coalesced explicit writes occur, none before the debounce expires, none after unload, and no read is issued because of a write.
+- Commands: permission tiers, latest-value-wins coalescing/expiry, no traffic before the debounce ends, one endpoint-wide window restarted by every command (`tests/test_dispatch.py`), max-wait bound, burst order and rate, a write inside a running cycle is not verified by that cycle, read-phase success/lag/mismatch/timeout, optimistic overlay shown and reverted, no replay, one-register zone effect, no global-coil side effect.
 - HA: flow/reconfigure/options/migration, 6+4 entities/devices, availability, supported-only features, translations, diagnostics and unload.
 - Real PyModbus integration: `PymodbusBackend` + `GatewayTransport` (+ `WtcReadClient`) against a pymodbus TCP server on `127.0.0.1` filled with the 6+4 profile. Covers decoding, pacing, Modbus exceptions, absent unit, server loss/backoff and a server-side write spy (only read function codes may arrive). Skipped without pymodbus; never pointed at real hardware.
 
@@ -18,7 +18,7 @@ Local equivalent (see `AGENTS.md` §9): `uv venv -p 3.13 && uv pip install -e ".
 
 ## Hardware
 
-Write tests (mock and loopback, `tests/test_commands.py`, `tests/ha/test_integration.py`, `tests/test_pymodbus_integration.py`) cover permissions, validation, latest-value-wins, ordering before reads, one-request-per-second, lag/timeout/no rewrite, expiry, reconnect, device exception, transport error, zero writes with an empty queue and the transport's hard limit (one wheel register, one function code 06). The first hardware write is a separate, approved test (below).
+Write tests (mock and loopback, `tests/test_commands.py`, `tests/ha/test_integration.py`, `tests/test_pymodbus_integration.py`) cover permissions, validation, latest-value-wins, debounce timing, one-request-per-second, lag/timeout/no rewrite, expiry, reconnect, device exception, transport error, zero writes with an empty queue and the transport's hard limit (one wheel register, one function code 06). The first hardware write is a separate, approved test (below).
 
 Begin read-only: inventory units/firmware/LIVE zones using the one-request-per-second baseline and small blocks; passively correlate dial/mode changes; characterize cadence only after a stable soak. Never test an oversized range directly on production hardware merely to find its failure point. Any later write requires separate user approval and recovery plan: one agreed zone, queued until the next cycle, one raw wheel step, physical/readback observation, restoration; locks/zone controls next; global/BMS tests last.
 

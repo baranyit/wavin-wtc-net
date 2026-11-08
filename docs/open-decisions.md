@@ -248,9 +248,10 @@ Choices made by the implementer within the maintainer's rules; revisit with hard
 - **One write route:** `WritableGatewayTransport.write_wheel_code` writes one register in
   4604..4610 with a value 0..12 (function code 06) and nothing else. It exists only if write mode
   is on and at least one zone is selected; otherwise the read-only transport class is used.
-- **Flow:** validate against the latest snapshot (no I/O) → queue (latest-value-wins per unit/zone)
-  → sent at the start of the next scheduled cycle through the shared 1 request/s limiter → verified
-  from that cycle's reads, with one more cycle of grace → TIMEOUT. Never rewritten.
+- **Flow (changed by decision 22):** validate against the latest snapshot (no I/O) → queue
+  (latest-value-wins per unit/zone) → written after a 2 s debounce through the shared 1 request/s
+  limiter → verified from the next cycle's reads, with one more cycle of grace → TIMEOUT. Never
+  rewritten. (Originally: sent at the start of the next scheduled cycle, before its reads.)
 - **Expiry/replay:** a command expires after 2 poll intervals and is dropped if the connection was
   lost or reconnected since it was queued.
 - **Conflicting bits (AGENTS §13):** the hardware run shows the master comfort/economy bit False
@@ -349,3 +350,31 @@ then (no preventive keepalive or re-write; AGENTS safety rule 5 and 7 stay).
 Prepared but not executed: `README.md`, `CHANGELOG.md`, `docs/supported-devices.md`,
 `docs/release-checklist.md`. No tag, no GitHub release, no HACS submission yet. The maintainer
 triggers publication explicitly.
+
+## 22. Debounced immediate writes with an optimistic overlay (decided 2026-11-08)
+
+Writes are rare and user-initiated, so waiting up to a whole poll interval was needless latency.
+This **changes** AGENTS safety rules 3 and 4 and decision 10's flow. Decided by the maintainer:
+
+- **Debounce.** One quiet period per endpoint (not per zone): every new command restarts a 2 s
+  timer; when it expires the whole queue is written in a fixed order (unit, zone, kind), one request
+  per command, through the same transport lock and 1 request/s limiter. An automation that sets all
+  thermostats therefore produces one burst after its last command. A command waiting longer than
+  10 s (steady stream, e.g. a dragged slider) is flushed anyway. Latest-value-wins is unchanged.
+- **No forced read-back.** Nothing is read because of a write. The next scheduled cycle verifies
+  (wheel 2, mode 3, lock 4 cycles, then TIMEOUT, never rewritten). The write may land between two
+  requests of a running cycle; a cycle that was already running at write time is ignored for that
+  command because its reads may predate the write.
+- **Optimistic overlay.** From submit until the command is final the entity shows the requested
+  value (climate target / on-off / preset, lock). The snapshot itself is never modified. The overlay
+  ends at the first cycle that started after the write for a wheel target (so a dial turn or an
+  ignored write shows the real value again after one cycle), and when the command becomes final for
+  lock and mode kinds (their status lags the command). It also ends on error, rejection, expiry,
+  supersede and unload. Status stays visible as `last_command_status`.
+- **Unchanged:** zero writes from polling, setup, reload, diagnostics (only an explicit submit arms
+  the timer); permissions, allow-lists, expiry, reconnect guard, no replay (waiting commands are
+  dropped on unload), no feature switch.
+- **Known weak spot:** the wheel read-back is the written register itself, so CONFIRMED proves
+  storage, not that the thermostat adopted it (see the hardware reports).
+- **Hardware:** the new traffic shape (a write between two reads, no read right after it) needs one
+  approved one-zone check (Dolgozó, one step and restore) before release.

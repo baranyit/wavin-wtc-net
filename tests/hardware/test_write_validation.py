@@ -102,9 +102,8 @@ async def test_one_zone_one_step_and_restore() -> None:
     queue = CommandQueue(clock, ttl=interval * 3)
     permissions = CommandPermissions(True, frozenset({(unit, zone)}))  # exactly this zone
     executor = CommandExecutor(transport, queue, permissions)
-    poller = GatewayPoller(
-        client, interval=interval, before_reads=executor.before_reads, on_snapshot=executor.verify
-    )
+    poller = GatewayPoller(client, interval=interval, on_snapshot=executor.verify)
+    executor.cycle_index = lambda: poller.cycles_started
 
     log: list[dict[str, Any]] = []
     t0 = time.time()
@@ -125,7 +124,7 @@ async def test_one_zone_one_step_and_restore() -> None:
         )
         return snapshot
 
-    def queue_target(snapshot: GatewaySnapshot, code: int) -> None:
+    async def queue_target(snapshot: GatewaySnapshot, code: int) -> None:
         target = CAL.comfort_target(code, cooling=False)
         raw = validate_wheel_target(
             unit_id=unit,
@@ -141,6 +140,7 @@ async def test_one_zone_one_step_and_restore() -> None:
                 CommandKind.WHEEL_TARGET, unit, zone, target, raw, transport.connection_generation
             )
         )
+        await executor.flush()  # written now (after the debounce in production)
 
     restored = False
     stepped = False
@@ -153,7 +153,7 @@ async def test_one_zone_one_step_and_restore() -> None:
         assert view["live"] is True and view["on"] is True
         assert view["cooling"] is False and view["comfort"] is True
 
-        queue_target(snapshot, to_code)
+        await queue_target(snapshot, to_code)
         stepped = True
         await asyncio.sleep(interval)
         await cycle("1 write step + read-back")
@@ -176,7 +176,7 @@ async def test_one_zone_one_step_and_restore() -> None:
                 snapshot = await cycle("3 pre-restore read")
                 current = _zone_view(snapshot, unit, zone)["wheel_code"]
                 if current != from_code:
-                    queue_target(snapshot, from_code)
+                    await queue_target(snapshot, from_code)
                     await asyncio.sleep(interval)
                     await cycle("4 restore write + read-back")
                     await asyncio.sleep(interval)

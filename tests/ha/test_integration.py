@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -324,6 +325,16 @@ def test_every_english_string_has_a_hungarian_translation() -> None:
 # -- write mode ------------------------------------------------------------------------------
 
 
+async def _wait_for_writes(hass: HomeAssistant, device: MockWtcBackend, count: int) -> None:
+    """Let the (shortened) debounce run until ``count`` writes reached the mock device."""
+    for _ in range(100):
+        if len(device.writes) >= count:
+            break
+        await asyncio.sleep(0.02)
+    await hass.async_block_till_done()
+    assert len(device.writes) == count
+
+
 def _climate_id(hass: HomeAssistant, unit: int, zone: int) -> str:
     entity_id = er.async_get(hass).async_get_entity_id(
         "climate", DOMAIN, f"{GATEWAY_ID}_u{unit}_z{zone}_climate"
@@ -349,7 +360,7 @@ async def test_write_mode_is_off_by_default_no_target_control(
     assert mock_device.writes == []
 
 
-async def test_set_temperature_is_queued_then_written_at_the_next_cycle(
+async def test_set_temperature_is_shown_at_once_written_after_the_debounce_and_confirmed(
     hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
 ) -> None:
     mock_entry.add_to_hass(hass)
@@ -370,21 +381,26 @@ async def test_set_temperature_is_queued_then_written_at_the_next_cycle(
     await hass.services.async_call(
         "climate", "set_temperature", {"entity_id": entity_id, "temperature": 22.0}, blocking=True
     )
-    assert len(mock_device.records) == requests_before  # queued only: no traffic, no write
+    assert len(mock_device.records) == requests_before  # queued only: no traffic yet
     assert mock_device.writes == []
     state = hass.states.get(entity_id)
     assert state is not None
-    assert state.attributes["temperature"] == 22.5  # no optimistic state
+    assert state.attributes["temperature"] == 22.0  # optimistic: the request is shown at once
     assert state.attributes["last_command_status"] == "queued"
 
-    await mock_entry.runtime_data.coordinator.async_refresh()  # the next scheduled cycle
-    await hass.async_block_till_done()
+    await _wait_for_writes(hass, mock_device, 1)  # written after the debounce
     assert mock_device.writes == [("write_register", 2, 4605, 6)]
-    cycle = mock_device.records[requests_before:]
-    assert cycle[0].op == "write_register" and all(r.op != "write_register" for r in cycle[1:])
+    assert [r.op for r in mock_device.records[requests_before:]] == ["write_register"]  # no re-read
     state = hass.states.get(entity_id)
     assert state is not None
-    assert state.attributes["temperature"] == 22.0  # from the read-back
+    assert state.attributes["temperature"] == 22.0
+    assert state.attributes["last_command_status"] == "sent"
+
+    await mock_entry.runtime_data.coordinator.async_refresh()  # the next cycle decides
+    await hass.async_block_till_done()
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.attributes["temperature"] == 22.0  # now from the read
     assert state.attributes["last_command_status"] == "confirmed"
 
     await mock_entry.runtime_data.coordinator.async_refresh()
@@ -457,11 +473,12 @@ async def test_lock_entities_only_for_lock_zones_and_changes_are_queued(
     requests_before = len(mock_device.records)
     await hass.services.async_call("lock", "lock", {"entity_id": entity_id}, blocking=True)
     assert len(mock_device.records) == requests_before and mock_device.writes == []
-    assert hass.states.get(entity_id).state == "unlocked"  # type: ignore[union-attr]  # not optimistic
+    assert hass.states.get(entity_id).state == "locked"  # type: ignore[union-attr]  # optimistic
 
+    await _wait_for_writes(hass, mock_device, 1)
+    assert mock_device.writes == [("write_coil", 1, 4659, True)]
     await mock_entry.runtime_data.coordinator.async_refresh()
     await hass.async_block_till_done()
-    assert mock_device.writes == [("write_coil", 1, 4659, True)]
     state = hass.states.get(entity_id)
     assert state is not None and state.state == "locked"
     assert state.attributes["last_command_status"] == "confirmed"
@@ -496,13 +513,16 @@ async def test_preset_and_power_are_queued_for_mode_zones_only(
         "climate", "set_preset_mode", {"entity_id": entity_id, "preset_mode": "eco"}, blocking=True
     )
     assert len(mock_device.records) == before and mock_device.writes == []
-    assert hass.states.get(entity_id).attributes["preset_mode"] == "comfort"  # type: ignore[union-attr]
+    assert hass.states.get(entity_id).attributes["preset_mode"] == "eco"  # type: ignore[union-attr]
+    await _wait_for_writes(hass, mock_device, 1)
     await mock_entry.runtime_data.coordinator.async_refresh()
     await hass.async_block_till_done()
     assert mock_device.writes == [("write_coil", 2, 4613, False)]
     assert hass.states.get(entity_id).attributes["preset_mode"] == "eco"  # type: ignore[union-attr]
 
     await hass.services.async_call("climate", "turn_off", {"entity_id": entity_id}, blocking=True)
+    assert hass.states.get(entity_id).state == "off"  # type: ignore[union-attr]  # optimistic
+    await _wait_for_writes(hass, mock_device, 2)
     await mock_entry.runtime_data.coordinator.async_refresh()
     await hass.async_block_till_done()
     assert mock_device.writes[-1] == ("write_coil", 2, 4612, False)
@@ -510,6 +530,7 @@ async def test_preset_and_power_are_queued_for_mode_zones_only(
     await hass.services.async_call(
         "climate", "set_hvac_mode", {"entity_id": entity_id, "hvac_mode": "heat"}, blocking=True
     )
+    await _wait_for_writes(hass, mock_device, 3)
     await mock_entry.runtime_data.coordinator.async_refresh()
     await hass.async_block_till_done()
     assert mock_device.writes[-1] == ("write_coil", 2, 4612, True)
@@ -520,3 +541,54 @@ async def test_preset_and_power_are_queued_for_mode_zones_only(
         )
     heat_cool_addresses = {4614}  # zone 2 heat/cool control coil
     assert not [w for w in mock_device.writes if w[2] in heat_cool_addresses | {4127, 4128, 4129}]
+
+
+async def test_optimistic_value_reverts_to_the_real_one_when_the_device_ignores_the_write(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    mock_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_entry,
+        options={**mock_entry.options, "write_enabled": True, "writable_zones": ["2:2"]},
+    )
+    assert await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done()
+    entity_id = _climate_id(hass, 2, 2)
+    mock_device.ignore_writes = True  # accepted by the transport, never applied
+    await hass.services.async_call(
+        "climate", "set_temperature", {"entity_id": entity_id, "temperature": 22.0}, blocking=True
+    )
+    assert hass.states.get(entity_id).attributes["temperature"] == 22.0  # type: ignore[union-attr]
+    await _wait_for_writes(hass, mock_device, 1)
+    assert hass.states.get(entity_id).attributes["temperature"] == 22.0  # type: ignore[union-attr]
+    await mock_entry.runtime_data.coordinator.async_refresh()  # first cycle after the write
+    await hass.async_block_till_done()
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.attributes["temperature"] == 22.5  # the real value is back
+    assert state.attributes["last_command_status"] == "sent"  # still awaited, never rewritten
+    await mock_entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get(entity_id).attributes["last_command_status"] == "timeout"  # type: ignore[union-attr]
+    assert len(mock_device.writes) == 1
+
+
+async def test_unload_drops_waiting_commands_without_a_write(
+    hass: HomeAssistant, mock_device: MockWtcBackend, mock_entry: MockConfigEntry
+) -> None:
+    mock_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_entry,
+        options={**mock_entry.options, "write_enabled": True, "writable_zones": ["2:2"]},
+    )
+    assert await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done()
+    await hass.services.async_call(
+        "climate",
+        "set_temperature",
+        {"entity_id": _climate_id(hass, 2, 2), "temperature": 22.0},
+        blocking=True,
+    )
+    assert await hass.config_entries.async_unload(mock_entry.entry_id)
+    await asyncio.sleep(0.8)  # longer than debounce and max wait
+    assert mock_device.writes == []

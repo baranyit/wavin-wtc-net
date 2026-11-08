@@ -1,8 +1,9 @@
 """Climate entities, one per zone.
 
-State comes from the last polled snapshot only, never from a command. A zone gets a settable
-comfort target only when write mode is on and the zone is explicitly enabled; the value is queued
-and sent at the start of the next poll cycle, then confirmed by that cycle's read-back.
+State comes from the last polled snapshot. A zone gets a settable comfort target, on/off and
+preset only when write mode is on and the zone is explicitly enabled. Such a request is shown
+immediately (optimistic overlay), written after a 2 s debounce and decided by the next poll cycle:
+if the read shows a different value (a dial turn, a rejected write), the real value is shown.
 """
 
 from __future__ import annotations
@@ -72,8 +73,14 @@ class WtcZoneClimate(WtcEntity, ClimateEntity):
     @property
     def preset_mode(self) -> str | None:
         zone = self.zone_snapshot
-        if zone is None or not self._mode_writable:
+        if zone is None or self._zone is None or not self._mode_writable:
             return None
+        if (
+            pending := self.coordinator.optimistic(
+                self._unit_id, self._zone, CommandKind.ZONE_PRESET
+            )
+        ) is not None:
+            return PRESET_COMFORT if pending.target else PRESET_ECO
         value = zone.comfort_economy
         if value is None:
             value = zone.control_comfort_economy
@@ -140,7 +147,15 @@ class WtcZoneClimate(WtcEntity, ClimateEntity):
     @property
     def target_temperature(self) -> float | None:
         zone = self.zone_snapshot
-        return zone_effective_target(zone, self._calibration) if zone else None
+        if zone is None:
+            return None
+        if self._zone is not None and (
+            pending := self.coordinator.optimistic(
+                self._unit_id, self._zone, CommandKind.WHEEL_TARGET
+            )
+        ):
+            return float(pending.target)
+        return zone_effective_target(zone, self._calibration)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -162,7 +177,7 @@ class WtcZoneClimate(WtcEntity, ClimateEntity):
         }
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Queue only. The write happens at the next scheduled cycle; state changes on read-back."""
+        """Queue; shown at once, written after the debounce, decided by the next reads."""
         if (target := kwargs.get(ATTR_TEMPERATURE)) is None or self._zone is None:
             return
         try:
@@ -179,6 +194,12 @@ class WtcZoneClimate(WtcEntity, ClimateEntity):
         zone = self.zone_snapshot
         if zone is None:
             return None
+        if self._zone is not None and (
+            pending := self.coordinator.optimistic(
+                self._unit_id, self._zone, CommandKind.ZONE_POWER
+            )
+        ):
+            return bool(pending.target)
         return zone.on_off if zone.on_off is not None else zone.control_on_off
 
     @property

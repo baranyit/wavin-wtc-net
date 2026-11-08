@@ -29,7 +29,7 @@ HomeGate is useful protocol evidence, not an architectural template.
 - Zone registers start 4136, stride 6; status coils 4130, stride 8; writable controls 4604, stride 8; lock writes 4656+ (`Thermostat.java:16-23,50-97`).
 - Wheel register `4604 + zone−1` maps as `neutral + (code−6)×wheel_step` (`Thermostat.java:62-64`; reverse: `WriteableRegister.java:24-30`). At 22 °C/0.5 °C, code 6 is 22 °C and the range is 19–25 °C.
 - Command exceptions are logged and swallowed (`WriteableRegister.java:24-32`, `WriteableCoil.java:22-28`), so it is not a safe acknowledgement model.
-- HomeGate executes MQTT-originated writes immediately (`WriteableRegister.java:24-30`, `WriteableCoil.java:22-25`). The new design intentionally changes this: user commands enter a coalescing queue and are flushed immediately before the next scheduled read cycle. Heating latency makes the delay acceptable; avoiding extra out-of-cycle traffic has priority.
+- HomeGate executes MQTT-originated writes immediately (`WriteableRegister.java:24-30`, `WriteableCoil.java:22-25`). The new design intentionally changes this: user commands enter a coalescing queue and are written after a 2 s debounce (decision 22; originally flushed before the next read cycle). No read is triggered by a write, and one command is one request, so the traffic stays bounded and serialized.
 
 ## Conclusions
 

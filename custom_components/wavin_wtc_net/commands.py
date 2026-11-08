@@ -1,26 +1,34 @@
-"""Command layer: permissions, validation, latest-value-wins queue, expiry, read-back verification.
+"""Command layer: permissions, validation, debounced dispatch, optimistic overlay, verification.
 
 Flow (docs/04-architecture.md, AGENTS.md section 4):
 
 1. ``validate_wheel_target`` validates a requested comfort target (heating or cooling) against
    the permissions and the latest snapshot and maps it to exactly one raw wheel code. No I/O.
 2. ``CommandQueue.submit`` stores it keyed by ``(unit, zone, kind)``; a newer command supersedes
-   the older one. Nothing is sent.
-3. At the start of the next scheduled cycle ``CommandExecutor.before_reads`` sends what is queued,
-   one register per command, through the shared one-request-per-second transport.
-4. After that cycle's reads ``CommandExecutor.verify`` compares the read-back wheel code. Entity
-   state only ever comes from reads. There is no optimistic state and no replay: a command whose
-   connection changed or whose expiry passed is dropped, a command never written twice.
+   the older one. ``CommandExecutor.notify_submitted`` (re)starts one endpoint-wide debounce: the
+   queue is flushed when 2 s passed without a new command, or 10 s after the first waiting one.
+3. ``CommandExecutor.flush`` writes what is queued, one register/coil per command, in a fixed
+   order, through the shared one-request-per-second transport (between the requests of a running
+   poll cycle if need be). There is no targeted read-back: the next cycle confirms.
+4. Until then the entities show the requested value (the *optimistic overlay*, ``optimistic``).
+   The overlay ends when the command is final or, for a wheel target, at the first poll cycle that
+   started after the write, so a real (e.g. dial) value is never hidden for long. A cycle that was
+   already running at write time is ignored for that command (its reads may predate the write).
+   There is no replay: a command whose connection changed or whose expiry passed is dropped, a
+   command is never written twice.
 
 Pure Python: no Home Assistant imports.
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import enum
+import logging
 import math
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 
 from .errors import WtcError, WtcModbusExceptionError, WtcRequestRejectedError, WtcTransportError
@@ -41,6 +49,12 @@ DEFAULT_VERIFY_CYCLES = 2
 LOCK_VERIFY_CYCLES = 4
 MODE_VERIFY_CYCLES = 3
 HISTORY_SIZE = 20
+#: Quiet time after the last command before the queue is written (restarts on every command).
+DEFAULT_DEBOUNCE = 2.0
+#: Upper bound from the first waiting command, so a steady stream cannot starve the write.
+DEFAULT_MAX_WAIT = 10.0
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class CommandKind(enum.Enum):
@@ -316,6 +330,9 @@ def _observed(command: Command, zone: ZoneSnapshot | None) -> int | None:
 class _Awaiting:
     command: Command
     cycles_left: int
+    #: Poll cycles numbered up to this one may predate the write and are ignored (None = no fence).
+    sent_cycle: int | None = None
+    overlay: bool = True
 
 
 @dataclass(slots=True)
@@ -327,6 +344,7 @@ class CommandQueue:
     verify_cycles: int = DEFAULT_VERIFY_CYCLES
     _next_id: int = 1
     _pending: dict[CommandKey, Command] = field(default_factory=dict)
+    _sending: dict[CommandKey, Command] = field(default_factory=dict)
     _awaiting: dict[CommandKey, _Awaiting] = field(default_factory=dict)
     _latest: dict[CommandKey, CommandRecord] = field(default_factory=dict)
     history: deque[CommandRecord] = field(default_factory=lambda: deque(maxlen=HISTORY_SIZE))
@@ -367,8 +385,13 @@ class CommandQueue:
         return self._record(command, CommandStatus.QUEUED, None)
 
     def take_pending(self) -> list[Command]:
-        """Freeze the pending set for this cycle (sorted for a deterministic order)."""
+        """Freeze the pending set for one flush (sorted for a deterministic order).
+
+        The commands stay visible to ``optimistic`` while they are being sent.
+        """
         commands = sorted(self._pending.values(), key=lambda c: (c.unit_id, c.zone, c.kind.value))
+        for command in commands:
+            self._sending[command.key] = command
         self._pending.clear()
         return commands
 
@@ -378,20 +401,63 @@ class CommandQueue:
         status: CommandStatus,
         detail: str | None = None,
         observed_code: int | None = None,
+        *,
+        sent_cycle: int | None = None,
     ) -> CommandRecord:
+        key = command.key
+        sending = self._sending.get(key)
+        if sending is not None and sending.command_id == command.command_id:
+            del self._sending[key]
         if status is CommandStatus.SENT:
+            newer = self._pending.get(key)
+            if newer is not None and newer.command_id > command.command_id:
+                # Written, but the user already replaced it: the newer command owns the key.
+                return self._record(
+                    command,
+                    CommandStatus.SUPERSEDED,
+                    "written, replaced by a newer command before the read-back",
+                    record_latest=False,
+                )
             cycles = {
                 CommandKind.LOCK: LOCK_VERIFY_CYCLES,
                 CommandKind.ZONE_POWER: MODE_VERIFY_CYCLES,
                 CommandKind.ZONE_PRESET: MODE_VERIFY_CYCLES,
             }.get(command.kind, self.verify_cycles)
-            self._awaiting[command.key] = _Awaiting(command, cycles)
+            self._awaiting[key] = _Awaiting(command, cycles, sent_cycle)
         return self._record(command, status, detail, observed_code)
 
-    def verify(self, snapshot: GatewaySnapshot) -> list[CommandRecord]:
+    def drop_unsent(self, detail: str) -> list[CommandRecord]:
+        """Final-mark every command that was waiting or being sent (unload, shutdown)."""
+        commands = [*self._pending.values(), *self._sending.values()]
+        self._pending.clear()
+        self._sending.clear()
+        return [self._record(c, CommandStatus.TIMEOUT, detail) for c in commands]
+
+    def optimistic(
+        self, unit_id: int, zone: int, kind: CommandKind = CommandKind.WHEEL_TARGET
+    ) -> Command | None:
+        """The command whose requested value the entity should show until a read says otherwise."""
+        key = CommandKey(unit_id, zone, kind)
+        if (command := self._pending.get(key)) is not None:
+            return command
+        if (command := self._sending.get(key)) is not None:
+            return command
+        waiting = self._awaiting.get(key)
+        return waiting.command if waiting is not None and waiting.overlay else None
+
+    def verify(
+        self, snapshot: GatewaySnapshot, cycle_index: int | None = None
+    ) -> list[CommandRecord]:
+        """Compare a snapshot (poll cycle ``cycle_index``) with the written commands."""
         done: list[CommandRecord] = []
         for key, waiting in list(self._awaiting.items()):
             command = waiting.command
+            if (
+                cycle_index is not None
+                and waiting.sent_cycle is not None
+                and cycle_index <= waiting.sent_cycle
+            ):
+                continue  # this cycle was already running at write time: its reads may be older
             unit = snapshot.unit(command.unit_id)
             zone = unit.zone(command.zone) if unit and unit.available else None
             observed = _observed(command, zone)
@@ -399,6 +465,8 @@ class CommandQueue:
                 del self._awaiting[key]
                 done.append(self._record(command, CommandStatus.CONFIRMED, None, observed))
                 continue
+            if command.kind is CommandKind.WHEEL_TARGET:
+                waiting.overlay = False  # the first post-write cycle shows the real value
             waiting.cycles_left -= 1
             if waiting.cycles_left <= 0:
                 del self._awaiting[key]
@@ -425,26 +493,48 @@ class CommandQueue:
         status: CommandStatus,
         detail: str | None,
         observed_code: int | None = None,
+        *,
+        record_latest: bool = True,
     ) -> CommandRecord:
         record = CommandRecord(command, status, detail, self.clock.monotonic(), observed_code)
-        self._latest[command.key] = record
+        if record_latest:
+            self._latest[command.key] = record
         self.history.append(record)
         return record
 
 
 class CommandExecutor:
-    """Poller hooks: send the frozen queue before the reads, verify after them."""
+    """Debounced dispatch of explicit user commands, and their verification by later reads.
+
+    Nothing here runs unless a command was submitted: polling alone never writes.
+    """
 
     def __init__(
         self,
         transport: WritableGatewayTransport,
         queue: CommandQueue,
         permissions: CommandPermissions,
+        *,
+        debounce: float = DEFAULT_DEBOUNCE,
+        max_wait: float = DEFAULT_MAX_WAIT,
+        cycle_index: Callable[[], int] | None = None,
+        on_change: Callable[[], None] | None = None,
     ) -> None:
+        if not (debounce > 0 and max_wait >= debounce):
+            raise ValueError("need 0 < debounce <= max_wait")
         self._transport = transport
         self._queue = queue
         self._permissions = permissions
         self._clock = queue.clock
+        self._debounce = debounce
+        self._max_wait = max_wait
+        #: Number of the poll cycle that started last (fences stale reads); None disables it.
+        self.cycle_index = cycle_index
+        #: Called after a flush changed command states (the coordinator refreshes listeners).
+        self.on_change = on_change
+        self._first_submit: float | None = None
+        self._last_submit = 0.0
+        self._worker: asyncio.Task[None] | None = None
 
     @property
     def queue(self) -> CommandQueue:
@@ -458,12 +548,54 @@ class CommandExecutor:
     def connection_generation(self) -> int:
         return self._transport.connection_generation
 
-    async def before_reads(self) -> None:
-        for command in self._queue.take_pending():
+    def notify_submitted(self) -> None:
+        """A command was queued: (re)start the quiet period. Needs a running event loop."""
+        now = self._clock.monotonic()
+        self._last_submit = now
+        if self._first_submit is None:
+            self._first_submit = now
+        if self._worker is None or self._worker.done():
+            self._worker = asyncio.get_running_loop().create_task(self._run())
+
+    async def flush(self) -> None:
+        """Write everything queued now, one request per command, in a fixed order."""
+        commands = self._queue.take_pending()
+        for command in commands:
             await self._send(command)
+        if commands and self.on_change is not None:
+            self.on_change()
+
+    async def close(self) -> None:
+        """Stop dispatching and drop what has not been written (no replay after a reload)."""
+        worker, self._worker = self._worker, None
+        if worker is not None and not worker.done():
+            worker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await worker
+        self._first_submit = None
+        self._queue.drop_unsent("dropped on unload")
 
     def verify(self, snapshot: GatewaySnapshot) -> None:
-        self._queue.verify(snapshot)
+        index = self.cycle_index() if self.cycle_index is not None else None
+        self._queue.verify(snapshot, index)
+
+    async def _run(self) -> None:
+        try:
+            while True:
+                while True:
+                    first = self._first_submit if self._first_submit is not None else 0.0
+                    deadline = min(self._last_submit + self._debounce, first + self._max_wait)
+                    wait = deadline - self._clock.monotonic()
+                    if wait <= 0:
+                        break
+                    await self._clock.sleep(wait)
+                self._first_submit = None  # commands arriving during the flush start a new window
+                await self.flush()
+                if self._queue.pending_count == 0:
+                    return
+        except Exception:
+            _LOGGER.exception("command dispatch failed")
+            raise
 
     async def _send(self, command: Command) -> None:
         queue = self._queue
@@ -499,7 +631,8 @@ class CommandExecutor:
         except WtcTransportError as err:
             queue.mark(command, CommandStatus.TRANSPORT_ERROR, f"{type(err).__name__}: {err}")
         else:
-            queue.mark(command, CommandStatus.SENT)
+            sent_cycle = self.cycle_index() if self.cycle_index is not None else None
+            queue.mark(command, CommandStatus.SENT, sent_cycle=sent_cycle)
 
 
 def records_summary(records: Iterable[CommandRecord]) -> list[dict[str, object]]:

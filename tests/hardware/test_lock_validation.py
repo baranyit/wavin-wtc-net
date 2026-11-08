@@ -81,9 +81,8 @@ async def test_lock_one_zone_and_unlock() -> None:
     queue = CommandQueue(AsyncioClock(), ttl=interval * 3)
     permissions = CommandPermissions(True, frozenset(), frozenset({(unit, zone)}))
     executor = CommandExecutor(transport, queue, permissions)
-    poller = GatewayPoller(
-        client, interval=interval, before_reads=executor.before_reads, on_snapshot=executor.verify
-    )
+    poller = GatewayPoller(client, interval=interval, on_snapshot=executor.verify)
+    executor.cycle_index = lambda: poller.cycles_started
     log: list[dict[str, Any]] = []
     t0 = time.time()
     next_at = t0
@@ -112,7 +111,7 @@ async def test_lock_one_zone_and_unlock() -> None:
         )
         return snapshot
 
-    def queue_lock(snapshot: GatewaySnapshot, locked: bool) -> None:
+    async def queue_lock(snapshot: GatewaySnapshot, locked: bool) -> None:
         print(
             f"\nQUEUED_{'LOCK' if locked else 'UNLOCK'} at {time.strftime('%H:%M:%S')}", flush=True
         )
@@ -122,6 +121,7 @@ async def test_lock_one_zone_and_unlock() -> None:
                 CommandKind.LOCK, unit, zone, locked, int(locked), transport.connection_generation
             )
         )
+        await executor.flush()  # written now (after the debounce in production)
 
     async def wait_for(want: bool, label: str) -> tuple[GatewaySnapshot, int | None]:
         snapshot = await cycle(f"{label} write + read-back")
@@ -140,7 +140,7 @@ async def test_lock_one_zone_and_unlock() -> None:
         snapshot = await cycle("0 read-only precondition")
         assert status_of(snapshot) is False, "zone is not unlocked, not approved"
         assert snapshot.unit(unit).zone(zone).live is True  # type: ignore[union-attr]
-        queue_lock(snapshot, True)
+        await queue_lock(snapshot, True)
         started = True
         await tick()
         snapshot, locked_after_cycles = await wait_for(True, "1 lock")
@@ -151,7 +151,7 @@ async def test_lock_one_zone_and_unlock() -> None:
             for n in range(hold):
                 await tick()
                 snapshot = await cycle(f"1.{n + 1} hold locked")
-        queue_lock(snapshot, False)
+        await queue_lock(snapshot, False)
         await tick()
         snapshot, unlocked_after_cycles = await wait_for(False, "2 unlock")
         final_unlocked = status_of(snapshot) is False
@@ -161,7 +161,7 @@ async def test_lock_one_zone_and_unlock() -> None:
                 await tick()
                 snapshot = await cycle("3 pre-restore read")
                 if status_of(snapshot) is not False:
-                    queue_lock(snapshot, False)
+                    await queue_lock(snapshot, False)
                     await tick()
                     snapshot, _ = await wait_for(False, "4 emergency unlock")
                 final_unlocked = status_of(snapshot) is False
