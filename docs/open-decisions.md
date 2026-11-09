@@ -376,5 +376,6 @@ This **changes** AGENTS safety rules 3 and 4 and decision 10's flow. Decided by 
   dropped on unload), no feature switch.
 - **Known weak spot:** the wheel read-back is the written register itself, so CONFIRMED proves
   storage, not that the thermostat adopted it (see the hardware reports).
-- **Hardware:** the new traffic shape (a write between two reads, no read right after it) needs one
-  approved one-zone check (Dolgozó, one step and restore) before release.
+- **Hardware (2026-11-09):** the approved one-zone check passed (Dolgozó, one step and restore, the
+  write cost exactly one request, confirmed by the next cycle), see
+  `docs/hardware-debounce-write-test-2026-11-09.md`.

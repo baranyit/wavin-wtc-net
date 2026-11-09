@@ -12,9 +12,10 @@ writable transport, command queue, poller. Sequence:
 
 1. read-only cycle; abort without writing unless the zone is live, on, heating, comfort and its
    wheel code equals ``from_code``;
-2. queue the target for ``to_code``; next cycle writes it before the reads and verifies;
+2. submit the target for ``to_code``; the debounced dispatcher (2 s) writes it between cycles with
+   no read triggered by the write (decision 22); the next cycle verifies;
 3. one more observation cycle;
-4. queue the restore to ``from_code``; next cycle writes it and verifies; one more observation.
+4. submit the restore to ``from_code`` the same way; the next cycle verifies; one more observation.
 
 Exactly two writes at most. If the restore cannot be confirmed the report says so loudly. The
 physical dial is observed by the human, who is told the timestamps in the report.
@@ -140,7 +141,25 @@ async def test_one_zone_one_step_and_restore() -> None:
                 CommandKind.WHEEL_TARGET, unit, zone, target, raw, transport.connection_generation
             )
         )
-        await executor.flush()  # written now (after the debounce in production)
+        # The production path: arm the 2 s debounce and let the dispatcher write. No read may be
+        # triggered by the write: requests_started grows by exactly one (the write itself).
+        started_before = transport.stats.requests_started
+        submitted_at = time.time()
+        executor.notify_submitted()
+        for _ in range(100):  # up to ~10 s (max wait) + the write
+            await asyncio.sleep(0.1)
+            record = queue.latest(unit, zone)
+            if record is not None and record.status is not CommandStatus.QUEUED:
+                break
+        await asyncio.sleep(0.5)
+        log.append(
+            {
+                "label": f"dispatch code {code}",
+                "write_after_s": round(time.time() - submitted_at - 0.5, 1),
+                "requests_started_delta": transport.stats.requests_started - started_before,
+                "status": (queue.latest(unit, zone) or object).status.value,  # type: ignore[attr-defined]
+            }
+        )
 
     restored = False
     stepped = False
