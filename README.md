@@ -3,7 +3,7 @@
 A native, local Home Assistant integration for **Wavin WTC-NET** underfloor heating/cooling
 controllers over **Modbus TCP**. No cloud, no Java bridge, no MQTT.
 
-> **Status: beta (0.1.0, not released yet).** Reading is the default and has been validated on one
+> **Status: beta (0.2.0, not released yet).** Reading is the default and has been validated on one
 > real installation. Writing is optional, off by default, and has been exercised on hardware on a
 > single zone. See [what was validated](docs/supported-devices.md). This is an unofficial project,
 > not affiliated with or endorsed by Wavin. Use it at your own risk.

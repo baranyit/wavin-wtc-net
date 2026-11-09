@@ -1,6 +1,6 @@
 [project]
 name = "wavin-wtc-net"
-version = "0.1.0"
+version = "0.2.0"
 description = "Wavin WTC-NET Home Assistant integration (local Modbus TCP)"
 readme = "docs/README.md"
 license = "MIT"
