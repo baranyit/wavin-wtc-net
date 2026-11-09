@@ -284,3 +284,28 @@ immediate MQTT-style writes.
 - Unit-ID semantics on real hardware (keys 1/2 → Modbus unit IDs is evidenced only in HomeGate code).
 
 If a task depends on one of these, implement it as configurable/testable, keep writes disabled, and say so in the PR.
+
+## 14. Versioning
+
+Semantic versioning (`MAJOR.MINOR.PATCH`). **Every merge to `main` raises the version**, and the
+agent decides the level itself from what the change contains; no separate question to the maintainer.
+
+- **Major:** a breaking change: removed or renamed options, entities or services, changed
+  `unique_id`/identity, a changed meaning of existing state or behaviour users rely on, a migration
+  that cannot be undone. While the version is `0.x`, a breaking change raises **minor** instead;
+  `1.0.0` is the maintainer's decision (first stable release).
+- **Minor:** a backward-compatible feature or behaviour change (new capability, new option with a
+  safe default, changed timing or flow that keeps options, entities and identity).
+- **Patch:** a bug fix, or a change with no user-visible behaviour (docs, tests, CI, refactoring).
+
+How, in the same PR as the change (never as a separate "bump" PR after the merge):
+
+1. Raise `version` in `custom_components/wavin_wtc_net/manifest.json` and `pyproject.toml`, and the
+   version in the README status line.
+2. Add a CHANGELOG section on top for the new version (`## X.Y.Z (unreleased, beta)` until a release
+   is cut) with the user-visible changes and the reason for the level when it is not obvious.
+3. Say the level and the reason in the PR description.
+
+`tests/test_version.py` fails when these four places disagree. Version bumps do not tag or publish:
+tags, GitHub releases and HACS submission stay the maintainer's explicit step (decision 21,
+`docs/release-checklist.md`). If a change mixes levels, the highest one wins.
