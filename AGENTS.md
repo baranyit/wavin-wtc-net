@@ -31,8 +31,9 @@ unless a user explicitly asked for it**.
   (22/26 °C, 0.5/0.5 here), economy ignores the wheel. Cooling is accepted by rule, not measured.
 - **Done – plan step 5 (code, mock/loopback tested, not hardware tested):** wheel comfort-target
   commands (heating and, by decision 11, cooling), permission tiers (write mode off by default + per-zone opt-in), queue
-  with latest-value-wins, expiry and reconnect guard, flush before the next cycle's reads,
-  read-back verification (2 cycles, never rewritten). Details: `docs/open-decisions.md` decision 10.
+  with latest-value-wins, expiry and reconnect guard, debounced
+  dispatch (2 s endpoint-wide window, 10 s max), optimistic overlay, read-back verification by the
+  next cycles (never rewritten). Details: `docs/open-decisions.md` decisions 10 and 22.
 - **Hardware write test passed** on Dolgozó (unit 2 zone 2, one step 24 → 23.5 → 24 °C, restored):
   `docs/hardware-write-test-2026-11-07.md`. Other zones are untested; each new zone or kind of
   write needs its own approval.
@@ -71,11 +72,15 @@ Breaking any of these blocks the change, even when the tests pass.
    (The Python reference rewrote setpoints on every poll. Never reproduce that.)
 2. **Write mode is off by default.** Zone permissions and controller-global permissions are separate
    opt-ins. MVP allows only validated wheel writes and, optionally, lock writes.
-3. **Commands are queued, not sent.** Validate → map to exactly one raw code → enqueue keyed by
-   `(unit, zone, command_kind)` with latest-value-wins → flush at the **start of the next scheduled
-   cycle**, before the reads → confirm from that cycle's reads. No immediate transaction, no focused
-   re-read, no out-of-cycle traffic.
-4. **No optimistic state.** Report queued / sent / confirmed / superseded / timeout / rejected /
+3. **Commands are debounced, then written once.** Validate → map to exactly one raw code → enqueue
+   keyed by `(unit, zone, command_kind)` with latest-value-wins → one endpoint-wide 2 s debounce
+   (restarted by every command, flushed after 10 s at the latest) → one write per command through
+   the shared lock and 1 req/s limiter, in a fixed order → confirm from the next cycle that started
+   after the write. **No read is triggered by a write** (no focused re-read), nothing is written
+   without an explicit command (a cycle never writes), and unwritten commands are dropped on unload.
+4. **Optimistic display, read-decided state.** Entities show the requested value until a read
+   decides (overlay; the snapshot is never altered) and the real value returns on error, timeout,
+   supersede, unload or at the first post-write cycle (wheel). Report queued / sent / confirmed / superseded / timeout / rejected /
    transport error. Entity state changes only after read-back confirmation.
 5. **No replay.** Commands carry an expiry/generation token. Nothing is resent after reconnect,
    reload or a newer command.
@@ -166,7 +171,8 @@ custom_components/wavin_wtc_net/
                   codes 0..12, FC06), one zone lock coil (4656..4662, FC05) or one zone on/off or
                   comfort/economy control coil (offsets 0 and 1, FC05), a transport subclass
                   built only when write mode is on
-  # coordinator command phase: poller hook before_reads (send queue) → reads → on_snapshot (verify)
+  # dispatch: coordinator.submit_* → CommandExecutor.notify_submitted (debounce) → flush → writes;
+  # poll cycle = reads → on_snapshot (verify; cycles started before the write are ignored)
 tests/
 ```
 
@@ -219,14 +225,14 @@ sub-0.1 s request timeouts.
 
 Mandatory test categories (see `docs/07-testing-strategy.md`):
 - **Write spy:** setup, snapshot reads, reconnect, diagnostics, unload and polling with an empty queue
-  → **zero** write calls. With queued commands → only the coalesced explicit writes, all before the reads.
+  → **zero** write calls. With submitted commands → only the coalesced explicit writes, none before the debounce ends.
 - **Rate/cap:** ≥ 1 s between request starts per endpoint. No request exceeds 15 registers / 16 coils.
   Two units share one queue. Cycles never overlap.
 - **Codecs:** signed scaling, sentinels, every address boundary for zones 1…7, packed wheel bytes,
   both wheel formulas, 0.5 °C round-trip.
 - **Faults:** malformed, short, exception and timeout responses; reconnect/backoff; partial unit failure.
-- **Commands:** permission tiers, latest-value-wins, expiry, no traffic before the next cycle, no
-  optimistic state, no replay, single-zone effect, no global-coil side effect.
+- **Commands:** permission tiers, latest-value-wins, expiry, no traffic before the debounce ends, overlay
+  shown and reverted, no replay, single-zone effect, no global-coil side effect.
 - **HA:** flows, 6+4 → ten stable climate devices, availability, translations, redacted diagnostics.
 
 The reference mock topology is two units with 6 + 4 zones (matches the real installation).

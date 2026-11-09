@@ -12,7 +12,8 @@ First public version.
 - Wheel calibration options (heating and cooling neutral and step) and a derived target
   temperature sensor.
 - Optional, off-by-default writing with per-zone opt-ins: comfort target (wheel register), lock
-  (lock coil), zone on/off and comfort/eco (control coils). Queue with latest-value-wins, flush at
-  the start of the next poll before the reads, read-back confirmation, expiry and no replay.
+  (lock coil), zone on/off and comfort/eco (control coils). Queue with latest-value-wins, one 2 s
+  debounce for all zones (restarted by each command, 10 s at most), optimistic display that falls
+  back to the real value, confirmation by the next poll (no extra reads), expiry and no replay.
 - Validated on one real installation (read) and one zone (write): see `docs/supported-devices.md`.
 - Not included: global controls, BMS keepalive, setpoint editing, economy targets, discovery.

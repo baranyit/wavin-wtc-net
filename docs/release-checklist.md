@@ -16,6 +16,7 @@ Before tagging 0.1.0:
 - [ ] README links work; the repo topics (`home-assistant`, `hacs`, `homeassistant-integration`,
       `modbus`, `wavin`) are set.
 - [ ] Re-run the read-only hardware validation once on the exact release commit.
+- [x] (passed 2026-11-09, `docs/hardware-debounce-write-test-2026-11-09.md`) Approved one-zone hardware check of the debounced immediate write (decision 22): Dolgozó, one wheel step and restore, confirm the write lands between two reads, no read follows it, and the next cycle confirms.
 - [ ] Tag `v0.1.0` and create a GitHub release (pre-release) with the CHANGELOG entry.
 - [ ] Optional: submit to the HACS default repository list after a stable period.
 

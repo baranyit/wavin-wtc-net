@@ -1,10 +1,10 @@
 """Wavin WTC-NET integration for Home Assistant.
 
 Read-only by default. Setup, reload, diagnostics and unload never write to the device. Only with
-write mode enabled in the options, for explicitly selected zones, a queued wheel command is sent
-at the start of the next poll cycle. The protocol core (``protocol``, ``models``, ``errors``,
-``transport``, ``client``, ``poller``, ``commands``, ``runtime``, ...) stays free of Home
-Assistant imports.
+write mode enabled in the options, for explicitly selected zones, an explicit user command is
+written after a 2 s debounce and confirmed by a later poll cycle. The protocol core
+(``protocol``, ``models``, ``errors``, ``transport``, ``client``, ``poller``, ``commands``,
+``runtime``, ...) stays free of Home Assistant imports.
 """
 
 from __future__ import annotations
@@ -21,6 +21,9 @@ from homeassistant.helpers import device_registry as dr
 from .client import DEFAULT_MAX_GAP
 from .commands import CommandExecutor, CommandPermissions, CommandQueue
 from .const import (
+    COMMAND_DEBOUNCE,
+    COMMAND_MAX_WAIT,
+    COMMAND_MIN_TTL,
     COMMAND_TTL_FACTOR,
     CONF_GATEWAY_ID,
     CONF_LOCK_ZONES,
@@ -101,8 +104,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WtcConfigEntry) -> bool:
     executor: CommandExecutor | None = None
     if writable:
         assert isinstance(transport, WritableGatewayTransport)
-        queue = CommandQueue(AsyncioClock(), interval * COMMAND_TTL_FACTOR)
-        executor = CommandExecutor(transport, queue, permissions)
+        queue = CommandQueue(AsyncioClock(), max(interval * COMMAND_TTL_FACTOR, COMMAND_MIN_TTL))
+        executor = CommandExecutor(
+            transport, queue, permissions, debounce=COMMAND_DEBOUNCE, max_wait=COMMAND_MAX_WAIT
+        )
     coordinator = WtcCoordinator(hass, entry, client, interval, executor)
     try:
         await coordinator.async_config_entry_first_refresh()
@@ -130,5 +135,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WtcConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: WtcConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
+        await entry.runtime_data.coordinator.async_shutdown()
         await entry.runtime_data.transport.close()
     return unloaded

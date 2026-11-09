@@ -9,9 +9,9 @@ GatewayRuntime(host,port)
   └─ Controller(unit=2) ─ Zone 1..N
 ```
 
-Cycle flow: coordinator wakes → freeze/coalesce the pending command set → execute queued writes sequentially → perform serialized bounded reads → use those reads to verify writes and build typed snapshots → atomic entity update. A partial unit failure marks only its entities unavailable. Entity properties perform no I/O.
+Cycle flow: coordinator wakes → perform serialized bounded reads → use those reads to verify earlier writes and build typed snapshots → atomic entity update. A cycle never writes. A partial unit failure marks only its entities unavailable. Entity properties perform no I/O.
 
-Command flow: validate capability/permission/range → map target to one raw code → enqueue by `(unit, zone, command-kind)` with latest-value-wins semantics → wait for the next scheduled cycle → write before reads → confirm from that cycle's snapshot. No immediate Modbus transaction or focused read is triggered. Commands carry an expiry/generation token, preventing replay after reconnect, reload or a newer command.
+Command flow: validate capability/permission/range → map target to one raw code → enqueue by `(unit, zone, command-kind)` with latest-value-wins semantics → restart the endpoint-wide 2 s debounce (flush at the latest 10 s after the first waiting command) → write the queue in fixed order through the shared transport lock and 1 request/s limiter, possibly between two requests of a running cycle → confirm from the next cycle that started after the write (a cycle running at write time is ignored for that command). No read is triggered by a write. Until then the entities show the requested value (optimistic overlay, `CommandQueue.optimistic`); the snapshot is never altered, and the overlay ends on the first post-write cycle for a wheel target, on the final status for lock/mode kinds, and on error, expiry, supersede or unload (decision 22). Commands carry an expiry/generation token, preventing replay after reconnect, reload or a newer command.
 
 Controller and zone devices are separate; zones use `via_device`. Prefer validated serial+unit for identity; until serial reliability is proven, persist a generated gateway ID and combine it with unit/zone—never rely on `entry_id` alone.
 

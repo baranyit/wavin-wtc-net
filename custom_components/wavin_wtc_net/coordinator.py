@@ -1,7 +1,8 @@
 """Coordinator wrapping ``GatewayPoller``: one cycle per refresh.
 
-Reads only, unless write mode is on: then explicitly queued wheel commands are sent at the start
-of the next cycle, before the reads (``commands.py``). Entity state always comes from reads.
+A cycle only reads. With write mode on, explicit user commands are written by the command layer
+after a 2 s debounce, between the requests of whatever is running (``commands.py``). Entities show
+the requested value until a read says otherwise (optimistic overlay); reads decide afterwards.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .calibration import calibration_from_options
 from .client import WtcReadClient
 from .commands import (
+    Command,
     CommandExecutor,
     CommandKind,
     CommandRecord,
@@ -60,12 +62,26 @@ class WtcCoordinator(DataUpdateCoordinator[GatewaySnapshot]):
         self.poller = GatewayPoller(
             client,
             interval=interval,
-            before_reads=executor.before_reads if executor else None,
             on_snapshot=executor.verify if executor else None,
         )
+        if executor is not None:
+            executor.cycle_index = lambda: self.poller.cycles_started
+            executor.on_change = self.async_update_listeners
+
+    def optimistic(self, unit_id: int, zone: int, kind: CommandKind) -> Command | None:
+        """The requested value to show until a read decides, or ``None``."""
+        if self.executor is None:
+            return None
+        return self.executor.queue.optimistic(unit_id, zone, kind)
+
+    async def async_shutdown(self) -> None:
+        """Stop command dispatch (unwritten commands are dropped, never replayed)."""
+        if self.executor is not None:
+            await self.executor.close()
+        await super().async_shutdown()
 
     def submit_wheel_target(self, unit_id: int, zone: int, target: float) -> CommandRecord:
-        """Validate and queue a comfort target. No I/O: it is sent at the next scheduled cycle."""
+        """Validate and queue a comfort target. No I/O here: the debounced flush writes it."""
         executor = self.executor
         if executor is None:
             raise CommandRejectedError(RejectReason.WRITE_DISABLED, "write mode is off")
@@ -81,6 +97,7 @@ class WtcCoordinator(DataUpdateCoordinator[GatewaySnapshot]):
             CommandKind.WHEEL_TARGET, unit_id, zone, target, code, executor.connection_generation
         )
         record = executor.queue.submit(command)
+        executor.notify_submitted()
         self.async_update_listeners()
         return record
 
@@ -117,7 +134,7 @@ class WtcCoordinator(DataUpdateCoordinator[GatewaySnapshot]):
                 ir.async_delete_issue(self.hass, DOMAIN, issue_id)
 
     def submit_lock(self, unit_id: int, zone: int, locked: bool) -> CommandRecord:
-        """Validate and queue a lock change. No I/O: sent at the next scheduled cycle."""
+        """Validate and queue a lock change. No I/O here: the debounced flush writes it."""
         executor = self.executor
         if executor is None:
             raise CommandRejectedError(RejectReason.WRITE_DISABLED, "write mode is off")
@@ -128,6 +145,7 @@ class WtcCoordinator(DataUpdateCoordinator[GatewaySnapshot]):
             CommandKind.LOCK, unit_id, zone, locked, int(locked), executor.connection_generation
         )
         record = executor.queue.submit(command)
+        executor.notify_submitted()
         self.async_update_listeners()
         return record
 
@@ -149,5 +167,6 @@ class WtcCoordinator(DataUpdateCoordinator[GatewaySnapshot]):
             kind, unit_id, zone, value, int(value), executor.connection_generation
         )
         record = executor.queue.submit(command)
+        executor.notify_submitted()
         self.async_update_listeners()
         return record

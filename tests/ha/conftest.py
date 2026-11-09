@@ -30,6 +30,16 @@ def _auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Let HA load custom_components/wavin_wtc_net in every HA test."""
 
 
+@pytest.fixture(autouse=True)
+def _fast_debounce() -> Iterator[None]:
+    """Real-time asyncio clock in HA tests: shrink the 2 s / 10 s window, keep its shape."""
+    with (
+        patch("custom_components.wavin_wtc_net.COMMAND_DEBOUNCE", 0.1),
+        patch("custom_components.wavin_wtc_net.COMMAND_MAX_WAIT", 0.5),
+    ):
+        yield
+
+
 @pytest.fixture
 def mock_device() -> Iterator[MockWtcBackend]:
     """Patch the client factory so the integration talks to the in-process 6+4 mock."""

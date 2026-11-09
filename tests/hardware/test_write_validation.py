@@ -12,9 +12,10 @@ writable transport, command queue, poller. Sequence:
 
 1. read-only cycle; abort without writing unless the zone is live, on, heating, comfort and its
    wheel code equals ``from_code``;
-2. queue the target for ``to_code``; next cycle writes it before the reads and verifies;
+2. submit the target for ``to_code``; the debounced dispatcher (2 s) writes it between cycles with
+   no read triggered by the write (decision 22); the next cycle verifies;
 3. one more observation cycle;
-4. queue the restore to ``from_code``; next cycle writes it and verifies; one more observation.
+4. submit the restore to ``from_code`` the same way; the next cycle verifies; one more observation.
 
 Exactly two writes at most. If the restore cannot be confirmed the report says so loudly. The
 physical dial is observed by the human, who is told the timestamps in the report.
@@ -102,9 +103,8 @@ async def test_one_zone_one_step_and_restore() -> None:
     queue = CommandQueue(clock, ttl=interval * 3)
     permissions = CommandPermissions(True, frozenset({(unit, zone)}))  # exactly this zone
     executor = CommandExecutor(transport, queue, permissions)
-    poller = GatewayPoller(
-        client, interval=interval, before_reads=executor.before_reads, on_snapshot=executor.verify
-    )
+    poller = GatewayPoller(client, interval=interval, on_snapshot=executor.verify)
+    executor.cycle_index = lambda: poller.cycles_started
 
     log: list[dict[str, Any]] = []
     t0 = time.time()
@@ -125,7 +125,7 @@ async def test_one_zone_one_step_and_restore() -> None:
         )
         return snapshot
 
-    def queue_target(snapshot: GatewaySnapshot, code: int) -> None:
+    async def queue_target(snapshot: GatewaySnapshot, code: int) -> None:
         target = CAL.comfort_target(code, cooling=False)
         raw = validate_wheel_target(
             unit_id=unit,
@@ -141,6 +141,25 @@ async def test_one_zone_one_step_and_restore() -> None:
                 CommandKind.WHEEL_TARGET, unit, zone, target, raw, transport.connection_generation
             )
         )
+        # The production path: arm the 2 s debounce and let the dispatcher write. No read may be
+        # triggered by the write: requests_started grows by exactly one (the write itself).
+        started_before = transport.stats.requests_started
+        submitted_at = time.time()
+        executor.notify_submitted()
+        for _ in range(100):  # up to ~10 s (max wait) + the write
+            await asyncio.sleep(0.1)
+            record = queue.latest(unit, zone)
+            if record is not None and record.status is not CommandStatus.QUEUED:
+                break
+        await asyncio.sleep(0.5)
+        log.append(
+            {
+                "label": f"dispatch code {code}",
+                "write_after_s": round(time.time() - submitted_at - 0.5, 1),
+                "requests_started_delta": transport.stats.requests_started - started_before,
+                "status": (queue.latest(unit, zone) or object).status.value,  # type: ignore[attr-defined]
+            }
+        )
 
     restored = False
     stepped = False
@@ -153,7 +172,7 @@ async def test_one_zone_one_step_and_restore() -> None:
         assert view["live"] is True and view["on"] is True
         assert view["cooling"] is False and view["comfort"] is True
 
-        queue_target(snapshot, to_code)
+        await queue_target(snapshot, to_code)
         stepped = True
         await asyncio.sleep(interval)
         await cycle("1 write step + read-back")
@@ -176,7 +195,7 @@ async def test_one_zone_one_step_and_restore() -> None:
                 snapshot = await cycle("3 pre-restore read")
                 current = _zone_view(snapshot, unit, zone)["wheel_code"]
                 if current != from_code:
-                    queue_target(snapshot, from_code)
+                    await queue_target(snapshot, from_code)
                     await asyncio.sleep(interval)
                     await cycle("4 restore write + read-back")
                     await asyncio.sleep(interval)

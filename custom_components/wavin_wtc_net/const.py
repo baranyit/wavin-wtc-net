@@ -35,5 +35,8 @@ DEFAULT_NEUTRAL_HEAT: Final = 22.0
 DEFAULT_NEUTRAL_COOL: Final = 26.0
 DEFAULT_WHEEL_STEP: Final = 0.5
 COMMAND_TTL_FACTOR: Final = 2.0  # a queued command expires after this many poll intervals
+COMMAND_DEBOUNCE: Final = 2.0  # quiet seconds after the last command before anything is written
+COMMAND_MAX_WAIT: Final = 10.0  # ... but never longer than this after the first waiting command
+COMMAND_MIN_TTL: Final = 60.0  # ... but never sooner than debounce + max wait + transport time
 
 __all__ = ["COMFORT", "COOLING", "LIVE_CONNECTED", "LOCKED", "ON_OFF_ON"]

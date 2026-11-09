@@ -1,8 +1,8 @@
 """Zone lock entities, created only for zones enabled for lock writes.
 
-The state is the polled lock status, never the command. A lock/unlock request is queued and sent at
-the start of the next poll cycle; the status coil lags the command, so the entity changes only
-after a later read shows the new status (docs/open-decisions.md decision 13).
+The state is the polled lock status. A lock/unlock request is shown at once (optimistic overlay),
+written after a 2 s debounce and kept on screen until a later read shows the new status or the
+command times out; the status coil lags the command (docs/open-decisions.md decisions 13 and 22).
 """
 
 from __future__ import annotations
@@ -47,6 +47,10 @@ class WtcZoneLock(WtcEntity, LockEntity):
         zone = self.zone_snapshot
         if zone is None or zone.lock_status is None:
             return None
+        if self._zone is not None and (
+            pending := self.coordinator.optimistic(self._unit_id, self._zone, CommandKind.LOCK)
+        ):
+            return bool(pending.target)
         return zone.lock_status == LOCKED
 
     @property
