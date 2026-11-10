@@ -1,4 +1,4 @@
-"""Binary sensors. Polarity: see ``const.py`` (confirmed by vendor document and HomeGate)."""
+"""Binary sensors. Polarity: see ``const.py`` (confirmed by vendor document and hardware)."""
 
 from __future__ import annotations
 

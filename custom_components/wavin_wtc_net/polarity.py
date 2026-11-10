@@ -1,7 +1,6 @@
 """Polarity of the raw status/control bits (single source of truth).
 
-Confirmed by the vendor BMS document v1.9, HomeGate and the first hardware run
-(``docs/open-decisions.md`` decision 5, ``docs/hardware-validation-2026-11-07.md``).
+Confirmed by the vendor BMS document v1.9 and the first hardware run (2026-11-07).
 Pure Python: no Home Assistant imports.
 """
 

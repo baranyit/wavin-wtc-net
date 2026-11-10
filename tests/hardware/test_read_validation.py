@@ -1,4 +1,4 @@
-"""Opt-in READ-ONLY hardware validation (plan step 4). Never runs in CI or by default.
+"""Opt-in READ-ONLY hardware validation. Never runs in CI or by default.
 
 Run only with explicit maintainer approval, one run at a time, write mode off:
 
@@ -10,7 +10,7 @@ Everything goes through the integration's own ``PymodbusBackend`` + ``GatewayTra
 backend has no write API at all. Cycles: one first cycle (static points) and ``WTC_CYCLES`` steady
 cycles spaced by the derived minimum poll interval (default 2). The report is written to
 ``WTC_REPORT_DIR`` (default ``tests/hardware/reports``) as JSON and contains raw values only: no
-credentials. Interpretation of the report is a human step (docs/vendor-bms-v1_9.md, decisions 3, 5).
+credentials. Interpretation of the report is a human step.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ def _unit_report(snapshot: GatewaySnapshot) -> list[dict[str, Any]]:
                         "temperature": z.temperature,
                         "live": z.live,
                         "valve_open": z.valve_open,
-                        # decision 5: status offsets 4/5 vs writable coils 0/1 must agree
+                        # status offsets 4/5 vs writable coils 0/1 must agree
                         "on_off_status": z.on_off,
                         "on_off_control": z.control_on_off,
                         "comfort_economy_status": z.comfort_economy,
@@ -145,7 +145,7 @@ async def test_read_only_validation_report() -> None:
             "last_latency_s": stats.last_latency,
         },
         "hole_failures": client.hole_failures,
-        "register_polarity_note": "see docs/open-decisions.md decision 5",
+        "register_polarity_note": "see polarity.py",
         "snapshots": snapshots,
     }
     path = await asyncio.to_thread(_write_report, report)

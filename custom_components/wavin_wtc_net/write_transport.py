@@ -2,7 +2,7 @@
 
 ``GatewayTransport`` (read-only) is what setup, polling, validation and diagnostics use. Only when
 the user enabled write mode does the integration construct this subclass. It shares the same lock,
-one-request-per-second limiter, timeout and backoff as reads (docs/04-architecture.md).
+one-request-per-second limiter, timeout and backoff as reads.
 
 It can perform exactly three kinds of write, each with a hard allow-list:
 

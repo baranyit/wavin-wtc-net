@@ -1,6 +1,6 @@
-"""24-hour virtual-time soak tests for the read-only milestone gate.
+"""24-hour virtual-time soak tests of the read path.
 
-Gate (docs/06-implementation-plan.md step 2): 24-hour polling/reconnect/malformed
+24-hour polling/reconnect/malformed
 response suite with zero write calls, no overlapping cycles and no rate/cap violation.
 """
 

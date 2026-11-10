@@ -1,8 +1,8 @@
 [project]
 name = "wavin-wtc-net"
-version = "0.2.0"
+version = "0.2.1"
 description = "Wavin WTC-NET Home Assistant integration (local Modbus TCP)"
-readme = "docs/README.md"
+readme = "README.md"
 license = "MIT"
 requires-python = ">=3.13"
 dependencies = ["pymodbus>=3.8.0"]

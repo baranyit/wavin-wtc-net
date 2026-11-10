@@ -1,4 +1,4 @@
-"""Opt-in HARDWARE LOCK test (decision 13). Never runs in CI or by default.
+"""Opt-in HARDWARE LOCK test. Never runs in CI or by default.
 
 Needs a separate maintainer approval for ONE zone (AGENTS.md section 10). Run with that zone only:
 

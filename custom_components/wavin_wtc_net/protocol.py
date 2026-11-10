@@ -3,10 +3,9 @@
 No I/O and no Home Assistant imports. Addresses are protocol addresses as used by
 the reference sources (offset 0); the transport applies any advanced address offset.
 
-Confidence levels follow ``docs/02-protocol-specification.md``:
-``BOTH`` is corroborated by the Python reference and HomeGate, ``REFERENCE_ONLY``
-still needs hardware or vendor confirmation. Nothing here writes; there is no
-write planning in this module on purpose.
+Confidence levels: ``BOTH`` is corroborated by independent sources (vendor document or
+hardware), ``REFERENCE_ONLY`` has a single source and still needs hardware or vendor
+confirmation. Nothing here writes; there is no write planning in this module on purpose.
 """
 
 from __future__ import annotations
@@ -285,7 +284,7 @@ def plan_reads(
 
     A request always starts and ends on a needed address. A new request starts when
     the next address would exceed the table's cap or the hole before it is larger
-    than ``max_gap``. Holding registers are planned before coils (HomeGate order).
+    than ``max_gap``. Holding registers are planned before coils.
     A hole is never bridged if it contains a ``blocked`` address (known to fail).
     """
     if max_registers < 1 or max_coils < 1:
@@ -387,7 +386,7 @@ def packed_wheel_code(word: int, zone: int, order: WheelByteOrder) -> int:
 
 @dataclass(frozen=True, slots=True)
 class WheelScale:
-    """``target = reference + (code - center_code) * step`` (docs/05-configuration.md)."""
+    """``target = reference + (code - center_code) * step``."""
 
     center_code: int = 6
     min_code: int = 0
@@ -401,21 +400,21 @@ class WheelScale:
             raise ValueError("step must be a positive finite number")
 
 
-#: HomeGate model, matching the real installation profile (0.5 degC per code).
-HOMEGATE_WHEEL_SCALE = WheelScale(step=0.5)
-#: Python reference model (1 degC per code); kept as a testable candidate only.
-PYTHON_REFERENCE_WHEEL_SCALE = WheelScale(step=1.0)
+#: 0.5 degC per code: the hardware-validated scale of the real installation.
+HALF_DEGREE_WHEEL_SCALE = WheelScale(step=0.5)
+#: 1 degC per code: rejected on hardware, kept as a testable candidate only.
+ONE_DEGREE_WHEEL_SCALE = WheelScale(step=1.0)
 
 TARGET_TOLERANCE = 1e-6
 
 
 @dataclass(frozen=True, slots=True)
 class WheelCalibration:
-    """Per-installation comfort-target calibration (docs/05-configuration.md).
+    """Per-installation comfort-target calibration.
 
     ``target = neutral(cooling) + (code - center_code) * step(cooling)`` for the comfort preset.
     Heating and cooling have their own neutral value and step. Economy targets do not use the
-    wheel (docs/hardware-validation-2026-11-07.md): they come from the economy setpoint registers.
+    wheel (hardware-validated): they come from the economy setpoint registers.
     """
 
     neutral_heat: float = 22.0

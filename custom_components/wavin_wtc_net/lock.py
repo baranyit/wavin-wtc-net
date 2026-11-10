@@ -2,7 +2,7 @@
 
 The state is the polled lock status. A lock/unlock request is shown at once (optimistic overlay),
 written after a 2 s debounce and kept on screen until a later read shows the new status or the
-command times out; the status coil lags the command (docs/open-decisions.md decisions 13 and 22).
+command times out; the status coil lags the command.
 """
 
 from __future__ import annotations
