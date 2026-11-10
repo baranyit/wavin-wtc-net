@@ -11,6 +11,9 @@ dependencies = ["pymodbus>=3.8.0"]
 test = ["pytest-homeassistant-custom-component>=0.13.316"]
 dev = ["pytest-homeassistant-custom-component>=0.13.316", "ruff", "mypy"]
 
+[tool.setuptools]
+packages = ["custom_components.wavin_wtc_net"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

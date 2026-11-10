@@ -8,6 +8,8 @@ Patch: no change in behaviour, options, entities or identity.
 - The `docs/` folder is removed: the code and its tests are the documentation. The validation
   summary moved into the README.
 - Hassfest and HACS validation run as their own workflows, with status badges in the README.
+- Packaging: only `custom_components.wavin_wtc_net` is built as a package (fixes the editable
+  install next to `assets/`).
 - Removed unused code: the transport address offset (never reachable from the options) and the
   fixed wheel scale constants (the scale comes from the options).
 

@@ -220,6 +220,9 @@ In the same PR as the change: raise `version` in `manifest.json` and `pyproject.
 README status line; add a CHANGELOG section on top (`## X.Y.Z (unreleased, beta)`); state the level
 and reason in the PR description. `tests/test_version.py` enforces agreement. The highest level wins.
 
-Tags, GitHub releases and HACS default-list submission are the maintainer's explicit step. Before a
-release: CI green on `main` (CI, Hassfest, HACS validation), CHANGELOG heading dated, one read-only
-hardware run on the release commit, then tag `v<version>` and a GitHub (pre-)release.
+Releases (HACS installs from GitHub releases): after the merge, with CI, Hassfest and HACS
+validation green on `main`, create a GitHub release `v<version>` (tag on the merge commit, not a
+pre-release) whose body is the CHANGELOG section. Only on the maintainer's request. The HACS
+default-list submission (a PR to `hacs/default`) is the maintainer's own step. HACS requirements to
+keep: public repo with description and topics, issues enabled, `hacs.json`, brand images in
+`brand/`, a passing `hacs.yml` and `hassfest.yml`, at least one release.
