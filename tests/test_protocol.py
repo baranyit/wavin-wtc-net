@@ -161,9 +161,12 @@ def test_plan_rejects_bad_parameters() -> None:
 
 # --- wheel math --------------------------------------------------------------
 
+HALF_DEGREE = p.WheelScale(step=0.5)
+ONE_DEGREE = p.WheelScale(step=1.0)
+
 
 def test_half_degree_wheel_formula_matches_real_profile() -> None:
-    scale = p.HALF_DEGREE_WHEEL_SCALE
+    scale = HALF_DEGREE
     assert p.wheel_code_to_target(6, 22.0, scale) == 22.0
     assert p.wheel_code_to_target(0, 22.0, scale) == 19.0
     assert p.wheel_code_to_target(12, 22.0, scale) == 25.0
@@ -171,12 +174,12 @@ def test_half_degree_wheel_formula_matches_real_profile() -> None:
 
 
 def test_one_degree_wheel_formula() -> None:
-    scale = p.ONE_DEGREE_WHEEL_SCALE
+    scale = ONE_DEGREE
     assert p.wheel_code_to_target(0, 22.0, scale) == 16.0
     assert p.wheel_code_to_target(12, 22.0, scale) == 28.0
 
 
-@pytest.mark.parametrize("scale", [p.HALF_DEGREE_WHEEL_SCALE, p.ONE_DEGREE_WHEEL_SCALE])
+@pytest.mark.parametrize("scale", [HALF_DEGREE, ONE_DEGREE])
 @pytest.mark.parametrize("reference", [22.0, 26.0, 17.5])
 def test_wheel_round_trip_every_code(scale: p.WheelScale, reference: float) -> None:
     for code in range(scale.min_code, scale.max_code + 1):
@@ -185,12 +188,12 @@ def test_wheel_round_trip_every_code(scale: p.WheelScale, reference: float) -> N
 
 
 def test_half_degree_is_preserved_and_never_rounded() -> None:
-    scale = p.HALF_DEGREE_WHEEL_SCALE
+    scale = HALF_DEGREE
     assert p.target_to_wheel_code(21.5, 22.0, scale) == 5
     with pytest.raises(ValueError):
         p.target_to_wheel_code(21.75, 22.0, scale)
     with pytest.raises(ValueError):
-        p.target_to_wheel_code(21.5, 22.0, p.ONE_DEGREE_WHEEL_SCALE)
+        p.target_to_wheel_code(21.5, 22.0, ONE_DEGREE)
     with pytest.raises(ValueError):
         p.target_to_wheel_code(25.5, 22.0, scale)
     with pytest.raises(ValueError):

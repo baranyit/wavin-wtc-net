@@ -8,6 +8,8 @@ Patch: no change in behaviour, options, entities or identity.
 - The `docs/` folder is removed: the code and its tests are the documentation. The validation
   summary moved into the README.
 - Hassfest and HACS validation run as their own workflows, with status badges in the README.
+- Removed unused code: the transport address offset (never reachable from the options) and the
+  fixed wheel scale constants (the scale comes from the options).
 
 ## 0.2.0 (unreleased, beta)
 

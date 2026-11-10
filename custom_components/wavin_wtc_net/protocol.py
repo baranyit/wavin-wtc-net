@@ -1,7 +1,7 @@
 """Pure WTC-NET protocol definitions: address map, codecs, wheel math and read planning.
 
-No I/O and no Home Assistant imports. Addresses are protocol addresses as used by
-the reference sources (offset 0); the transport applies any advanced address offset.
+No I/O and no Home Assistant imports. Addresses are Modbus protocol addresses (offset 0),
+sent on the wire unchanged.
 
 Confidence levels: ``BOTH`` is corroborated by independent sources (vendor document or
 hardware), ``REFERENCE_ONLY`` has a single source and still needs hardware or vendor
@@ -399,11 +399,6 @@ class WheelScale:
         if not (math.isfinite(self.step) and self.step > 0):
             raise ValueError("step must be a positive finite number")
 
-
-#: 0.5 degC per code: the hardware-validated scale of the real installation.
-HALF_DEGREE_WHEEL_SCALE = WheelScale(step=0.5)
-#: 1 degC per code: rejected on hardware, kept as a testable candidate only.
-ONE_DEGREE_WHEEL_SCALE = WheelScale(step=1.0)
 
 TARGET_TOLERANCE = 1e-6
 

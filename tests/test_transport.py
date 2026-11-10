@@ -83,12 +83,6 @@ def test_settings_bounds() -> None:
         TransportSettings(backoff_initial=10, backoff_max=5)
 
 
-async def test_address_offset_is_applied_on_the_wire() -> None:
-    _, backend, transport = make(TransportSettings(address_offset=-1))
-    await transport.read_holding_registers(1, 4122, 2)
-    assert backend.records[0].address == 4121
-
-
 async def test_modbus_exception_keeps_connection() -> None:
     _, backend, transport = make()
     backend.faults.append(Fault("exception", exception_code=2))
