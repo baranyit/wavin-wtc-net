@@ -1,6 +1,6 @@
 """Command layer: permissions, validation, debounced dispatch, optimistic overlay, verification.
 
-Flow (docs/04-architecture.md, AGENTS.md section 4):
+Flow (AGENTS.md, safety rules):
 
 1. ``validate_wheel_target`` validates a requested comfort target (heating or cooling) against
    the permissions and the latest snapshot and maps it to exactly one raw wheel code. No I/O.

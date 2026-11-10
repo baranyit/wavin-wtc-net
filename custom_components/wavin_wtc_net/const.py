@@ -1,7 +1,7 @@
 """Constants for the Home Assistant layer.
 
-Polarity of the raw coils (confirmed by the vendor BMS document v1.9 and HomeGate, see
-``docs/open-decisions.md`` decision 5): ``on_off`` True = on, ``comfort_economy`` True =
+Polarity of the raw coils (confirmed by the vendor BMS document v1.9 and on hardware, see
+``polarity.py``): ``on_off`` True = on, ``comfort_economy`` True =
 comfort, ``heat_cool`` True = cooling, lock True = locked, ``live`` True = connected.
 These are fixed, not user-configurable.
 """

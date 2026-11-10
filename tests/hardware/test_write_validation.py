@@ -1,7 +1,7 @@
-"""Opt-in HARDWARE WRITE test (plan step 5 gate). Never runs in CI or by default.
+"""Opt-in HARDWARE WRITE test. Never runs in CI or by default.
 
-Needs a separate, explicit maintainer approval for ONE zone and ONE raw wheel step (AGENTS.md
-section 10, docs/07-testing-strategy.md). Run with the exact approved change, nothing else:
+Needs a separate, explicit maintainer approval for ONE zone and ONE raw wheel step (AGENTS.md,
+hardware rules). Run with the exact approved change, nothing else:
 
     WTC_HARDWARE_HOST=192.168.1.210 WTC_HARDWARE_UNITS="1:6,2:4" \\
     WTC_WRITE_TEST="2:2:10:9" \\
@@ -13,7 +13,7 @@ writable transport, command queue, poller. Sequence:
 1. read-only cycle; abort without writing unless the zone is live, on, heating, comfort and its
    wheel code equals ``from_code``;
 2. submit the target for ``to_code``; the debounced dispatcher (2 s) writes it between cycles with
-   no read triggered by the write (decision 22); the next cycle verifies;
+   no read triggered by the write; the next cycle verifies;
 3. one more observation cycle;
 4. submit the restore to ``from_code`` the same way; the next cycle verifies; one more observation.
 

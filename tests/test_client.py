@@ -118,7 +118,7 @@ def test_unit_config_validation() -> None:
         UnitConfig(0, (1,))
 
 
-# -- decision 2: static points on a slow cadence ------------------------------------------
+# -- static points on a slow cadence ------------------------------------------
 
 
 def _static_reads(backend: MockWtcBackend) -> int:
@@ -185,7 +185,7 @@ def test_minimum_poll_interval() -> None:
     assert client.minimum_poll_interval == 44.0
 
 
-# -- decision 3: max_gap ------------------------------------------------------------------
+# -- max_gap ------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("gap", range(0, 9))
@@ -215,7 +215,7 @@ def test_max_gap_is_bounded() -> None:
             WtcReadClient(transport, units, max_gap=bad)
 
 
-# -- decision 4: fallback split -----------------------------------------------------------
+# -- fallback split -----------------------------------------------------------
 
 
 async def test_reference_only_failure_falls_back_and_is_remembered() -> None:

@@ -1,11 +1,21 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="custom_components/wavin_wtc_net/brand/dark_logo.png">
+    <img alt="WTC-NET" src="custom_components/wavin_wtc_net/brand/logo.png" width="374">
+  </picture>
+</p>
+
 # Wavin WTC-NET for Home Assistant
 
 A native, local Home Assistant integration for **Wavin WTC-NET** underfloor heating/cooling
 controllers over **Modbus TCP**. No cloud, no Java bridge, no MQTT.
 
-> **Status: beta (0.2.0, not released yet).** Reading is the default and has been validated on one
+[![HACS validation](https://github.com/baranyit/wavin-wtc-net/actions/workflows/hacs.yml/badge.svg)](https://github.com/baranyit/wavin-wtc-net/actions/workflows/hacs.yml)
+[![Hassfest](https://github.com/baranyit/wavin-wtc-net/actions/workflows/hassfest.yml/badge.svg)](https://github.com/baranyit/wavin-wtc-net/actions/workflows/hassfest.yml)
+
+> **Status: beta (0.2.1, not released yet).** Reading is the default and has been validated on one
 > real installation. Writing is optional, off by default, and has been exercised on hardware on a
-> single zone. See [what was validated](docs/supported-devices.md). This is an unofficial project,
+> single zone. See [what was validated](#what-was-validated). This is an unofficial project,
 > not affiliated with or endorsed by Wavin. Use it at your own risk.
 
 ## What it does
@@ -88,6 +98,28 @@ You cannot, by design: change heating/cooling, change setpoints, write the globa
 controller, or send a keepalive. Commands show their state (queued, sent, confirmed, timed out,
 rejected) in the entity attributes and in the diagnostics.
 
+## What was validated
+
+Observed on one real installation (two controllers, unit IDs 1 and 2, with 6 and 4 zones, firmware
+1011, heating season), not a general guarantee.
+
+| Area | Status |
+|---|---|
+| Connection, polling, rate and request caps | validated |
+| Temperature, humidity, dew point, valve, live, firmware, serial | read validated |
+| Wheel position and target formula (heating comfort) | validated on 3 zones |
+| Economy target = economy setpoint (heating) | validated on 1 zone |
+| Comfort target write, debounced dispatch, physical dial after a write | validated on 1 zone |
+| Lock / unlock, zone on/off, comfort/eco | validated on 1 zone |
+| Cooling polarity and cooling target | **not validated on hardware** (simulator only) |
+| Economy cooling target, global controls, keepalive, setpoint writes | not supported |
+| Persistence of writes over a power cycle | untested |
+| Other thermostat models or firmware | untested |
+
+To report a new installation, open an issue with the diagnostics file (host and gateway ID are
+redacted), the controller and zone counts, the firmware, and whether the target shown for a few
+dial positions matches your neutral and step settings.
+
 ## Known limitations
 
 - Hardware validation covers one installation (two controllers with 6 and 4 zones), and writes
@@ -102,8 +134,7 @@ rejected) in the entity attributes and in the diagnostics.
 
 Download the diagnostics from the integration page: the host and the generated gateway ID are
 redacted, raw register/coil images are included for support, plus transport statistics and the
-recent commands. If a point cannot be read, a Repair issue lists the excluded points. For the
-protocol notes, test reports and design decisions see [docs/](docs/README.md).
+recent commands. If a point cannot be read, a Repair issue lists the excluded points.
 
 ## Development
 
@@ -114,7 +145,8 @@ python -m pytest && ruff check . && ruff format --check . && mypy
 ```
 
 The hardware tests under `tests/hardware` never run by default. They need an explicit host and
-approval, and the write tests are limited to the approved zone. See `AGENTS.md` for the rules.
+approval, and the write tests are limited to the approved zone. The code and its tests are the
+documentation; `AGENTS.md` holds the rules for contributors and coding agents.
 
 ## License
 

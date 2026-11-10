@@ -1,311 +1,228 @@
 # AGENTS.md — Wavin WTC-NET Home Assistant integration
 
-Guidance for AI coding agents (Claude Code, Codex, Copilot, Cursor, etc.) working in this repository.
-Read this file fully before making changes. When this file and `docs/` disagree, **`docs/` wins** — then fix this file.
+Guidance for AI coding agents (Claude Code, Codex, Copilot, Cursor, etc.) maintaining this repository.
+Read it fully before making changes.
 
-## 1. Project in one paragraph
+## 1. The project
 
-A clean-room, native async Python Home Assistant integration for Wavin WTC-NET underfloor heating/cooling
-controllers over **local Modbus TCP** (no cloud, Java or MQTT). One gateway endpoint can serve several
-Modbus unit IDs (controllers), each with up to 7 zones. The device is treated as **fragile and
-rate-limited**, so the transport is deliberately slow and serialized, and **no write may ever happen
+A native async Python Home Assistant integration for Wavin WTC-NET underfloor heating/cooling
+controllers over **local Modbus TCP** (no cloud, no bridge, no MQTT). One gateway endpoint serves
+several Modbus unit IDs (controllers), each with up to 7 zones. The device is treated as **fragile
+and rate-limited**: the transport is deliberately slow and serialized, and **nothing is ever written
 unless a user explicitly asked for it**.
 
-## 2. Current status
+The project is in **maintenance mode**. The feature set is complete for the MVP; work is bug fixes,
+Home Assistant / pymodbus compatibility, small improvements and support for new installations.
+There is no separate design documentation: **the code, its docstrings and the tests are the
+documentation**, together with `README.md` (user-facing) and this file (rules). When you change a
+behaviour, update the docstrings, the tests, the README and, if a rule changes, this file in the
+same change.
 
-- **Done – plan step 2, read-only protocol core:** codecs, address map, read planning, serialized
-  transport, read client, poller, PyModbus adapter, in-process mock (6+4 zones) and a 24 h
-  virtual-time soak suite (zero writes, ≥ 1 s between request starts, caps, no overlap, outages).
-- **Done – open decision 1:** real-pymodbus integration tests against a localhost server
-  (`tests/test_pymodbus_integration.py`) and GitHub Actions CI (`.github/workflows/ci.yml`,
-  pymodbus 3.8.x + latest).
-- **Done – decisions 2-4 in code:** static points on a slow cadence, derived minimum poll
-  interval, `max_gap` 0..8, fallback split with per-connection exclusions (`docs/to-code.md`).
-- **Done – plan step 3 (code):** config/options/reconfigure flows, coordinator over `GatewayPoller`,
-  read-only climate/sensor/binary_sensor entities, translations (en/hu), redacted diagnostics,
-  Repairs issue for excluded points, HA tests in `tests/ha`; CI (lint, pytest matrix, hassfest,
-  HACS) is green.
-- **Done – plan step 4 (read-only hardware validation):** first run 2026-11-07, see
-  `docs/hardware-validation-2026-11-07.md`. Open decisions 1-9 are decided. The wheel rule is
-  closed: comfort `neutral + (code - 6) x step` with configurable heat/cool neutral and step
-  (22/26 °C, 0.5/0.5 here), economy ignores the wheel. Cooling is accepted by rule, not measured.
-- **Done – plan step 5 (code, mock/loopback tested, not hardware tested):** wheel comfort-target
-  commands (heating and, by decision 11, cooling), permission tiers (write mode off by default + per-zone opt-in), queue
-  with latest-value-wins, expiry and reconnect guard, debounced
-  dispatch (2 s endpoint-wide window, 10 s max), optimistic overlay, read-back verification by the
-  next cycles (never rewritten). Details: `docs/open-decisions.md` decisions 10 and 22.
-- **Hardware write test passed** on Dolgozó (unit 2 zone 2, one step 24 → 23.5 → 24 °C, restored):
-  `docs/hardware-write-test-2026-11-07.md`. Other zones are untested; each new zone or kind of
-  write needs its own approval.
-- Not yet done: plan step 1 evidence freeze, a cooling-season read-only run, optional lock writes,
-  plan step 6 and later.
-- Do not start later plan steps (writes, global controls) before the earlier gates pass.
-
-## 3. Source of truth (`docs/`)
-
-| File | Use it for |
-|---|---|
-| `docs/README.md` | Core decisions, main uncertainty, first milestone |
-| `docs/01-source-analysis.md` | Why things are designed this way; defects of the Python reference and HomeGate |
-| `docs/02-protocol-specification.md` | Register/coil map, encodings, confidence levels, safety contract |
-| `docs/03-functional-requirements.md` | FR-01…FR-13, non-functional rules, MVP acceptance |
-| `docs/04-architecture.md` | Module layout, cycle and command flow, identity, polling defaults |
-| `docs/05-configuration.md` | Config entry model, calibration formula, setup flow, real installation profile |
-| `docs/06-implementation-plan.md` | Milestones and their gates |
-| `docs/07-testing-strategy.md` | Required automated tests, hardware test rules, release gates |
-| `docs/vendor-bms-v1_9.md` | Vendor BMS interface facts (first vendor evidence; re-grade confidence from it) |
-| `docs/open-decisions.md` | Open maintainer decisions after milestone 1; work through in order |
-| `docs/to-code.md` | Coding tasks already decided but not yet implemented |
-| `docs/supported-devices.md` | What was validated on hardware, per feature |
-| `docs/release-checklist.md` | Prepared (not executed) publication steps |
-| `docs/hardware-*-2026-11-0*.md` | Signed hardware reports (read, write, lock, mode) |
-
-Cite the relevant doc and section in PR descriptions when you implement or change a behaviour.
-
-## 4. Non-negotiable safety rules
+## 2. Non-negotiable safety rules
 
 Breaking any of these blocks the change, even when the tests pass.
 
 1. **No automatic writes.** Setup, validation, discovery, refresh/polling, reconnect, reload,
-   diagnostics and unload make **zero** Modbus writes. A polling cycle may write **only** explicit
-   user commands that are already queued, and never generates corrective or configuration writes.
-   (The Python reference rewrote setpoints on every poll. Never reproduce that.)
-2. **Write mode is off by default.** Zone permissions and controller-global permissions are separate
-   opt-ins. MVP allows only validated wheel writes and, optionally, lock writes.
+   diagnostics and unload make **zero** Modbus writes. A cycle never generates corrective,
+   keepalive or configuration writes; only explicit user commands are written.
+2. **Write mode is off by default.** Writing has a master switch plus separate per-zone opt-ins
+   per kind (target, lock, on/off + preset). Controller-global controls are never written.
 3. **Commands are debounced, then written once.** Validate → map to exactly one raw code → enqueue
    keyed by `(unit, zone, command_kind)` with latest-value-wins → one endpoint-wide 2 s debounce
    (restarted by every command, flushed after 10 s at the latest) → one write per command through
-   the shared lock and 1 req/s limiter, in a fixed order → confirm from the next cycle that started
-   after the write. **No read is triggered by a write** (no focused re-read), nothing is written
-   without an explicit command (a cycle never writes), and unwritten commands are dropped on unload.
-4. **Optimistic display, read-decided state.** Entities show the requested value until a read
-   decides (overlay; the snapshot is never altered) and the real value returns on error, timeout,
-   supersede, unload or at the first post-write cycle (wheel). Report queued / sent / confirmed / superseded / timeout / rejected /
-   transport error. Entity state changes only after read-back confirmation.
+   the shared lock and 1 req/s limiter, in a fixed order → confirmed by the next cycle that started
+   after the write. **No read is triggered by a write**, and unwritten commands are dropped on unload.
+4. **Optimistic display, read-decided state.** Entities show the requested value as an overlay (the
+   snapshot is never altered); the real value returns on error, timeout, supersede, unload or at the
+   first post-write cycle. Command states: queued / sent / confirmed / superseded / timeout /
+   rejected / transport error.
 5. **No replay.** Commands carry an expiry/generation token. Nothing is resent after reconnect,
    reload or a newer command.
-6. **No hidden side effects.** A zone action never writes global coils 4127–4129. TH1 has **no**
-   hidden master behaviour.
+6. **No hidden side effects.** A zone action never writes the global coils 4127–4129.
 7. **No BMS keepalive** and no base-setpoint enforcement. Timeout and reset semantics are unknown.
-8. **Never silently round.** A requested target must map exactly, within tolerance, to a valid raw
-   code. Preserve the 0.5 °C resolution. If mode/preset is unknown, the target is *unavailable*,
-   not guessed.
-9. **Physical dial changes win.** Polling must never undo a change made on the thermostat.
+8. **Never silently round.** A requested target must map exactly (within tolerance) to a valid raw
+   code. Preserve the 0.5 °C resolution. If mode/preset is unknown, the target is *unavailable*.
+9. **The physical dial wins.** Polling must never undo a change made on the thermostat.
 
-## 5. Transport rules
+## 3. Transport rules
 
 - One config entry = one TCP endpoint = **one** async client and **one** serialized queue shared by
   all unit IDs on that endpoint.
-- **At most one Modbus request starts per second** per endpoint (HomeGate baseline). Do not use the
-  Python reference's 50 ms gaps.
-- Group addresses into logical spans, then split each span by **hard caps: 15 holding registers / 16
-  coils per request**. Never issue HomeGate's 480-coil-sized reads.
-- Raise caps or the rate **only** with hardware soak evidence, never adaptively at runtime. These are
-  advanced options with conservative bounds and warnings.
-- Cycles never overlap. If a tick arrives while a cycle is still running, skip or coalesce it.
+- **At most one Modbus request starts per second** per endpoint.
+- Group addresses into logical spans, then split by **hard caps: 15 holding registers / 16 coils per
+  request**. Never issue large block reads.
+- Raise caps or the rate **only** with hardware soak evidence, never adaptively at runtime.
+- Cycles never overlap; a tick during a running cycle is skipped or coalesced.
 - Bounded timeouts (default 5 s) and bounded exponential reconnect backoff. A failed unit becomes
-  *unavailable*, never stale-live. Other units keep working.
-- A failed write does not abort unrelated reads unless the connection itself is unusable.
-- Default poll interval 60 s, configurable 30–300 s, minimum derived from the plan size
-  (`ceil(requests × spacing × 1.5)`). Static data (firmware/serial) is read after (re)connect, then hourly.
+  *unavailable*, never stale-live; other units keep working. A failed write does not abort
+  unrelated reads unless the connection itself is unusable.
+- Poll interval default 60 s, 30–300 s, minimum derived from the plan size
+  (`ceil(requests × spacing × 1.5)`). Static data (firmware/serial) after (re)connect, then hourly.
 
-## 6. Protocol cheat-sheet
+## 4. Protocol cheat-sheet
 
-Addresses use offset 0 (an advanced offset exists for diagnostics only). Holding registers and coils
-are **separate address spaces**: e.g. register 4604 and coil 4604 are different things.
-"both" = corroborated by both sources; "ref-only" = only the Python reference listed it. Vendor
-document and first hardware run add evidence: see `docs/02-protocol-specification.md` "Evidence status".
-The code `Confidence` enum is unchanged. Never build write paths on addresses without an approved
-hardware test, whatever their label.
+The authoritative map is `protocol.py` (addresses, codecs, `Confidence`) and `polarity.py` (bit
+polarity). Addresses use offset 0. Holding registers and coils are **separate address spaces**.
+`BOTH` = corroborated by independent sources or hardware; `REFERENCE_ONLY` = single source. Never
+build a write path on an address without an approved hardware test, whatever its label.
 
 **Registers**
-- 4121 water temp, signed ×0.1 °C (both) · 4135 mode 0 init / 1 heat / 2 cool / 3 changeover (both)
+- 4121 water temp, signed ×0.1 °C · 4135 mode 0 init / 1 heat / 2 cool / 3 changeover
 - 4127 RH ×0.1 % · 4128 room temp · 4132 PI output · 4133 dew point · 4134 program/DIP ·
-  4500 firmware · 4501–4502 serial (all ref-only)
+  4500 firmware · 4501–4502 serial
 - `0xFFFF` / `0xFFFE` = invalid sentinel.
-- Zone `z` (1…7): `B = 4136 + 6·(z−1)`. B+0 temp, B+1 RH, B+2 dew point (both); B+3 wheel offset,
-  B+4 dew-point resistance, B+5 illuminance (ref-only).
-- Setpoints (vendor-documented, hw-read; **read-only for us**): `4178 + 3·(z−1)` comfort cool / +1 comfort heat / +2 economy
-  heat; `4700 + (z−1)` economy cool. The reference's ±1 °C compensation is **not** protocol truth.
-- Wheel: 4600–4603 packed read-only codes (ref-only); `4604 + (z−1)` writable wheel code (both).
+- Zone `z` (1…7): `B = 4136 + 6·(z−1)`: B+0 temp, B+1 RH, B+2 dew point, B+3 wheel offset,
+  B+4 dew-point resistance, B+5 illuminance.
+- Setpoints (**read-only**): `4178 + 3·(z−1)` comfort cool / +1 comfort heat / +2 economy heat;
+  `4700 + (z−1)` economy cool.
+- Wheel: 4600–4603 packed read-only codes; `4604 + (z−1)` writable wheel code 0…12 (FC06).
 
 **Coils**
-- Global: 4127 on/off, 4128 comfort/economy, 4129 heat/cool (both). Outputs/faults 4120, 4121, 4125,
-  4126 (ref-only).
-- Zone status `S = 4130 + 8·(z−1)`: DRY, OUT/valve, condensation, DWP input, on/off, comfort/economy,
-  heat/cool, live. Offsets 0–3, 6 and 7 are corroborated; 4–5 are ref-only.
-- Zone writable `C = 4604 + 8·(z−1)`: on/off, comfort/economy (both), heat/cool (ref-only).
-- Lock command `4656 + (z−1)`. Candidate delayed lock status `4186 + (z−1)`. Lock status lags, so
-  verify it with a delay.
+- Global (never written): 4127 on/off, 4128 comfort/economy, 4129 heat/cool. Outputs/faults 4120,
+  4121, 4125, 4126.
+- Zone status `S = 4130 + 8·(z−1)`: DRY, OUT/valve, condensation, DWP input, on/off,
+  comfort/economy, heat/cool, live.
+- Zone writable `C = 4604 + 8·(z−1)`: offset 0 on/off, 1 comfort/economy (FC05); offset 2
+  heat/cool is never written.
+- Lock command `4656 + (z−1)` (FC05); lock status `4186 + (z−1)` lags the command.
 
-**Wheel → target** (configurable, never hard-coded):
+**Wheel → target** (options, never hard-coded):
 
 ```
 comfort target = neutral(heat|cool) + (raw_code − 6) × step(heat|cool)
 ```
 
-Closed 2026-11-07 (hardware dial checks, heating; cooling by maintainer rule): codes 0…12, centre 6,
-`neutral_heat`/`neutral_cool`/`wheel_step_heat`/`wheel_step_cool` are options (real install 22/26 °C,
-0.5/0.5). Economy ignores the wheel (heating target = economy setpoint register; economy cooling
-unavailable). The Python reference's 1 °C per code is rejected here, kept testable in code only.
+Codes 0…12, centre 6. Validated for heating (real install 22 °C / 0.5 °C); cooling (26 °C / 0.5 °C)
+follows the same rule but is not hardware-validated. Economy ignores the wheel: the heating target
+is the economy setpoint register; the economy cooling target is unavailable.
 
-## 7. Architecture and code layout
-
-Package layout (HA custom component, HACS-style). Modules marked ✓ exist:
+## 5. Architecture
 
 ```
 custom_components/wavin_wtc_net/
-  errors.py            ✓ exception hierarchy (transport / Modbus exception / malformed / rejected)
-  protocol.py          ✓ PURE: addresses, confidence, codecs, wheel math, read planning, decoding
-  models.py            ✓ typed immutable snapshots (frozen dataclasses)
-  transport.py         ✓ backend protocol, serialized queue, 1 req/s limiter, caps, timeouts, backoff
-  pymodbus_backend.py  ✓ PyModbus adapter (retries=0, no auto-reconnect, slave=/device_id=)
-  client.py            ✓ read-only snapshot client (per-unit failure isolation, optional reads)
-  poller.py            ✓ non-overlapping cycle driver; commands phase will be added before reads
-  runtime.py, unit_spec.py ✓  HA-free helpers (client factory + probe, "1:6, 2:4" parser)
-  coordinator.py, config_flow.py, entity.py, climate.py, sensor.py, binary_sensor.py,
-  diagnostics.py, strings.json, translations/{en,hu}.json ✓  (read-only HA layer)
-  polarity.py ✓   fixed bit polarity (single source for core and HA layer)
-  commands.py ✓   permissions, validation, coalescing queue, expiry, read-back verification
-  write_transport.py, write_backend.py ✓  the ONLY write route: one wheel register (4604..4610,
-                  codes 0..12, FC06), one zone lock coil (4656..4662, FC05) or one zone on/off or
-                  comfort/economy control coil (offsets 0 and 1, FC05), a transport subclass
-                  built only when write mode is on
-  # dispatch: coordinator.submit_* → CommandExecutor.notify_submitted (debounce) → flush → writes;
-  # poll cycle = reads → on_snapshot (verify; cycles started before the write are ignored)
-tests/
+  errors.py            exception hierarchy (transport / Modbus exception / malformed / rejected)
+  protocol.py          PURE: addresses, confidence, codecs, wheel math, read planning, decoding
+  models.py            immutable typed snapshots (frozen dataclasses)
+  polarity.py          fixed bit polarity (single source for core and HA layer)
+  transport.py         backend protocol, serialized queue, 1 req/s limiter, caps, timeouts, backoff
+  pymodbus_backend.py  PyModbus adapter (retries=0, no auto-reconnect)
+  client.py            read-only snapshot client (per-unit failure isolation, fallback split)
+  poller.py            non-overlapping cycle driver
+  commands.py          permissions, validation, coalescing queue, debounce, overlay, verification
+  write_transport.py, write_backend.py   the ONLY write route, built only when write mode is on
+  runtime.py, unit_spec.py, calibration.py   HA-free helpers
+  coordinator.py, config_flow.py, entity.py, climate.py, sensor.py, binary_sensor.py, lock.py,
+  diagnostics.py, strings.json, translations/{en,hu}.json   HA layer
+  brand/               icon/logo PNGs (light and dark); SVG masters in assets/brand/
 ```
 
-```
-GatewayRuntime(host, port)
-  ├─ GatewayTransport (one client/queue)
-  ├─ Controller(unit=1) ─ Zone 1..N
-  └─ Controller(unit=2) ─ Zone 1..N
-```
-
-- `protocol.py`, `models.py` and `transport.py` must not import `homeassistant`. They must be
-  testable in plain pytest.
+- `protocol.py`, `models.py`, `polarity.py` and `transport.py` must not import `homeassistant`.
 - Reads and writes are **separate APIs**. The read path has no code route to a write function.
 - Controller and zone are separate devices; zones use `via_device`.
-- **Stable identity:** validated serial+unit when it is proven reliable. Until then, a generated and
-  persisted gateway ID + unit + zone. **Never rely on `entry_id`.**
-- Use the current HA APIs (config-entry runtime data, `DataUpdateCoordinator`, entity descriptions,
-  diagnostics, Repairs, translations). Check current HA developer docs instead of copying patterns
-  from the old Python reference.
+- **Identity:** generated, persisted gateway ID + unit + zone. Never `entry_id`; the serial is not
+  used for identity until proven reliable. Changing identity is a breaking change.
+- Use current HA APIs (runtime data, `DataUpdateCoordinator`, entity descriptions, diagnostics,
+  Repairs, translations); check the current HA developer docs when HA deprecates something.
 
-## 8. Coding conventions
+## 6. Coding conventions
 
 - **Language:** chat with the maintainer is in **Hungarian**. Everything committed (code, comments,
-  docstrings, docs, commit messages, PR descriptions, issues) is in **English**. Hungarian appears in
-  the repo only in `translations/hu.json` and in the real zone names used as test fixtures.
+  docstrings, README, commit messages, PR descriptions, issues) is in **English**. Hungarian appears
+  only in `translations/hu.json` and in the real zone names used as test fixtures.
+- Fully async, type-hinted (strict mypy), formatted and linted with ruff.
+- Immutable snapshots; no shared mutable state between cycles.
+- Normalize transport, Modbus-exception and malformed-response errors into the integration's own
+  exception types. Never swallow write errors.
+- Logging: no secrets, no full Modbus frames in normal logs. Raw diagnostics stay redacted.
+- Every user-facing string in English and Hungarian.
+- Self-contained: do not reference external projects or removed documents in code or comments.
+  Explain the "why" in the docstring next to the code.
 
-- Python, fully async, type-hinted (strict mypy target), formatted and linted with ruff.
-- Immutable typed snapshots; no shared mutable state between cycles.
-- Errors: normalize transport, Modbus-exception and malformed-response errors into the integration's
-  own exception types. Track last success, latency and failure count.
-- Logging: no secrets, no full Modbus frames in normal logs. Raw diagnostics are disabled by default.
-- User-facing strings: English primary, Hungarian translation required for every key.
-- Keep docs in sync: if behaviour diverges from `docs/`, update the doc in the same change.
+## 7. Testing
 
-## 9. Testing requirements
-
-Run before proposing any change (all must be clean). Set up once with
-`uv venv -p 3.13 && uv pip install -e ".[dev]"`, then `source .venv/bin/activate`:
+Set up once with `uv venv -p 3.13 && uv pip install -e ".[dev]"`, then `source .venv/bin/activate`.
+All must be clean before proposing a change:
 
 ```
-python -m pytest            # async tests run under pytest-asyncio (auto mode) from the HA test plugin
+python -m pytest
 ruff check . && ruff format --check .
-mypy                        # strict, custom_components only
+mypy
 ```
 
-Later also hassfest and HACS validation in CI. Test doubles live in `tests/mock_wtc.py`
-(`VirtualClock`, `MockWtcBackend` with fault injection, write spy and the real 6+4 profile).
-Use the virtual clock for anything time-related. Tests must never sleep for real, except
-sub-0.1 s request timeouts.
+CI runs these (`ci.yml`, pymodbus 3.8.x and latest) plus `hassfest.yml` and `hacs.yml`.
+Test doubles live in `tests/mock_wtc.py` (`VirtualClock`, `MockWtcBackend` with fault injection,
+write spy, the 6+4 reference topology). Use the virtual clock for anything time-related; tests never
+sleep for real, except sub-0.1 s request timeouts.
 
-Mandatory test categories (see `docs/07-testing-strategy.md`):
-- **Write spy:** setup, snapshot reads, reconnect, diagnostics, unload and polling with an empty queue
-  → **zero** write calls. With submitted commands → only the coalesced explicit writes, none before the debounce ends.
-- **Rate/cap:** ≥ 1 s between request starts per endpoint. No request exceeds 15 registers / 16 coils.
-  Two units share one queue. Cycles never overlap.
-- **Codecs:** signed scaling, sentinels, every address boundary for zones 1…7, packed wheel bytes,
-  both wheel formulas, 0.5 °C round-trip.
-- **Faults:** malformed, short, exception and timeout responses; reconnect/backoff; partial unit failure.
-- **Commands:** permission tiers, latest-value-wins, expiry, no traffic before the debounce ends, overlay
-  shown and reverted, no replay, single-zone effect, no global-coil side effect.
+Every change keeps these categories covered:
+- **Write spy:** setup, reads, reconnect, diagnostics, unload, polling with an empty queue → zero
+  writes; with commands → only the coalesced explicit writes, none before the debounce ends.
+- **Rate/cap:** ≥ 1 s between request starts; ≤ 15 registers / 16 coils; one shared queue; no overlap.
+- **Codecs:** signed scaling, sentinels, address boundaries for zones 1…7, packed wheel bytes,
+  0.5 °C round-trip.
+- **Faults:** malformed, short, exception and timeout responses; reconnect/backoff; partial failure.
+- **Commands:** permissions, latest-value-wins, expiry, debounce, overlay, no replay, single-zone
+  effect, no global-coil side effect.
 - **HA:** flows, 6+4 → ten stable climate devices, availability, translations, redacted diagnostics.
 
-The reference mock topology is two units with 6 + 4 zones (matches the real installation).
+A bug fix comes with a test that fails without it.
 
-## 10. Hardware and the real installation
+## 8. Hardware
 
-Real profile (a test fixture, **not** a universal default): endpoint `192.168.1.210:502`.
+Real installation (a test fixture, **not** a default): endpoint `192.168.1.210:502`.
 Unit 1: Konyha, Nappali, Balu, Gábor, Luca, Fürdő. Unit 2: Garázs, Dolgozó, Háló, Zuhany.
-Neutral 22 °C heating / 26 °C cooling. Wheel step 0.5 °C.
+Neutral 22 °C heating / 26 °C cooling, wheel step 0.5 °C. Hardware-validated so far: reads, and
+target/lock/on-off/preset writes on Dolgozó (unit 2 zone 2) only. Cooling is not validated.
 
-- **Agents must never connect to real hardware directly.** No ad-hoc scripts, pymodbus REPL sessions,
-  `modpoll`-style probes or one-off reads/writes against a live endpoint, read-only ones included.
-- **Integration test runs may reach the real endpoint.** The agent may start the integration itself
-  (e.g. a Home Assistant dev/test instance or an explicit hardware test suite), so all traffic goes
-  through the integration's own transport, rate limiter, block caps and safety rules. Conditions:
-  - write mode stays **off** unless the human maintainer explicitly approved a specific write test;
-  - use the conservative transport defaults (1 req/s, 15/16 caps), with no tuned or oversized settings;
-  - only one test run against the endpoint at a time, and stop it when the test is done;
-  - report what ran, for how long, and any errors or anomalies.
-- Real-hardware testing starts read-only at 1 req/s with small blocks. Never test oversized ranges on
-  production hardware to find a failure point.
-- Any hardware write needs separate human approval and a recovery plan: one agreed zone, one raw wheel
-  step, observation, restoration.
+- **Never connect to real hardware directly**: no ad-hoc scripts, pymodbus REPL, `modpoll`-style
+  probes or one-off reads/writes, read-only ones included.
+- Hardware runs go only through the integration itself (`tests/hardware`, opt-in markers
+  `hardware` / `hardware_write`, or an HA dev instance), with conservative defaults, one run at a
+  time, stopped when done, and a report of what ran, how long, and any errors.
+- Write mode stays **off** unless the maintainer approved a specific write test: one agreed zone,
+  one raw step, observation, restoration. Each new zone or kind of write needs its own approval.
+- Never probe oversized ranges on hardware to find a failure point.
 
-## 11. Explicitly out of scope (MVP)
+## 9. Out of scope
 
-Automatic seasonal/mode switching, BMS keepalive, program/base-setpoint editing, heat-pump
-optimization, inferred energy, unverified thermostat models, automatic discovery without bounded
-traffic testing, and any write built on ref-only addresses.
+Automatic seasonal/mode switching, BMS keepalive, program/setpoint editing, global controls,
+heat-pump optimization, inferred energy, unverified thermostat models, automatic discovery, and any
+write built on an address without a hardware test. Known pitfalls never to reintroduce: setpoint
+rewrites on every poll, hard-coded wheel centres, integer-rounded targets, hidden global side
+effects, `entry_id`-based identity, one client per entry on a shared endpoint, swallowed write
+errors, immediate unbatched writes.
 
-## 12. Clean-room rule
+## 10. Open questions (do not resolve by guessing)
 
-The Python reference (`wavin_wtc3`) and HomeGate (Java) are **evidence, not templates**. Do not copy
-their code. Re-derive behaviour from `docs/`. Do not reintroduce their known defects: poll-time
-setpoint rewrites, hard-coded 25/24/17/24 °C centers, integer-rounded targets, TH1 global side
-effects, `entry_id`-based identity, per-entry clients on a shared endpoint, swallowed write errors,
-immediate MQTT-style writes.
+- Wheel scale on other thermostat models/installations (hence the options).
+- Economy cooling target; cooling in general until a cooling-season run.
+- Validity of the setpoint registers 4178+/4700+ beyond reading.
+- Packed wheel words 4600–4603 vs the B+3 offset vs the physical dial.
+- Serial number reliability for identity.
+- Global vs zone bit precedence: master bits are ignored for zone commands; only a zone's own status
+  vs control bit disagreement blocks a write.
+- BMS timeout, reset semantics; persistence of writes over a power cycle.
 
-## 13. Open questions (do not resolve by guessing)
+If a task depends on one of these, make it configurable and testable, keep writes disabled, and say
+so in the PR.
 
-- Wheel scale is closed for this installation (see §6); other thermostat models/installations may differ, hence the options.
-- Economy cooling target (not covered by the comfort rule).
-- Setpoint ±1 °C compensation; 4178+/4700+ setpoint validity.
-- Packed wheel words 4600–4603 vs B+3 offset vs physical dial correlation.
-- Firmware/serial registers, so serial-based identity is not yet allowed.
-- Lock delay: shorter than one cycle on Dolgozó; the status address 4186+ is confirmed there.
-- Global vs zone bit precedence. Decision 10: master bits are ignored for the wheel command (real install runs zones in comfort while the master bit is economy); only a zone's own status vs control bit disagreement blocks a target write.
-- BMS timeout, reset semantics and safe value.
-- Unit-ID semantics on real hardware (keys 1/2 → Modbus unit IDs is evidenced only in HomeGate code).
+## 11. Versioning and releases
 
-If a task depends on one of these, implement it as configurable/testable, keep writes disabled, and say so in the PR.
+Semantic versioning. **Every merge to `main` raises the version**; the agent picks the level:
 
-## 14. Versioning
+- **Major:** breaking (removed/renamed options, entities or services, changed `unique_id`/identity,
+  changed meaning of state users rely on, irreversible migration). While on `0.x`, breaking raises
+  **minor**; `1.0.0` is the maintainer's decision.
+- **Minor:** backward-compatible feature or behaviour change.
+- **Patch:** bug fix, or no user-visible behaviour change (docs, tests, CI, refactoring, branding).
 
-Semantic versioning (`MAJOR.MINOR.PATCH`). **Every merge to `main` raises the version**, and the
-agent decides the level itself from what the change contains; no separate question to the maintainer.
+In the same PR as the change: raise `version` in `manifest.json` and `pyproject.toml` and in the
+README status line; add a CHANGELOG section on top (`## X.Y.Z (unreleased, beta)`); state the level
+and reason in the PR description. `tests/test_version.py` enforces agreement. The highest level wins.
 
-- **Major:** a breaking change: removed or renamed options, entities or services, changed
-  `unique_id`/identity, a changed meaning of existing state or behaviour users rely on, a migration
-  that cannot be undone. While the version is `0.x`, a breaking change raises **minor** instead;
-  `1.0.0` is the maintainer's decision (first stable release).
-- **Minor:** a backward-compatible feature or behaviour change (new capability, new option with a
-  safe default, changed timing or flow that keeps options, entities and identity).
-- **Patch:** a bug fix, or a change with no user-visible behaviour (docs, tests, CI, refactoring).
-
-How, in the same PR as the change (never as a separate "bump" PR after the merge):
-
-1. Raise `version` in `custom_components/wavin_wtc_net/manifest.json` and `pyproject.toml`, and the
-   version in the README status line.
-2. Add a CHANGELOG section on top for the new version (`## X.Y.Z (unreleased, beta)` until a release
-   is cut) with the user-visible changes and the reason for the level when it is not obvious.
-3. Say the level and the reason in the PR description.
-
-`tests/test_version.py` fails when these four places disagree. Version bumps do not tag or publish:
-tags, GitHub releases and HACS submission stay the maintainer's explicit step (decision 21,
-`docs/release-checklist.md`). If a change mixes levels, the highest one wins.
+Releases (HACS installs from GitHub releases): after the merge, with CI, Hassfest and HACS
+validation green on `main`, create a GitHub release `v<version>` (tag on the merge commit, not a
+pre-release) whose body is the CHANGELOG section. Only on the maintainer's request. The HACS
+default-list submission (a PR to `hacs/default`) is the maintainer's own step. HACS requirements to
+keep: public repo with description and topics, issues enabled, `hacs.json`, brand images in
+`brand/`, a passing `hacs.yml` and `hassfest.yml`, at least one release.

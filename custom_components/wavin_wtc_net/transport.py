@@ -86,7 +86,6 @@ class TransportSettings:
     connect_timeout: float = 5.0
     backoff_initial: float = 5.0
     backoff_max: float = 300.0
-    address_offset: int = 0
 
     def __post_init__(self) -> None:
         if self.min_request_interval < ABSOLUTE_MIN_REQUEST_INTERVAL:
@@ -99,8 +98,6 @@ class TransportSettings:
             raise ValueError("timeouts must be positive")
         if not 0 < self.backoff_initial <= self.backoff_max:
             raise ValueError("backoff must satisfy 0 < initial <= max")
-        if not -MAX_PROTOCOL_ADDRESS <= self.address_offset <= MAX_PROTOCOL_ADDRESS:
-            raise ValueError("address_offset out of range")
 
     def cap_for(self, table: Table) -> int:
         if table is Table.HOLDING_REGISTER:
@@ -197,10 +194,9 @@ class GatewayTransport:
             validate_unit_id(unit_id)
         except ValueError as err:
             raise WtcRequestRejectedError(str(err)) from err
-        wire_address = address + self._settings.address_offset
-        if wire_address < 0 or wire_address + count - 1 > MAX_PROTOCOL_ADDRESS:
-            raise WtcRequestRejectedError(f"address range {wire_address}+{count} out of range")
-        return wire_address
+        if address < 0 or address + count - 1 > MAX_PROTOCOL_ADDRESS:
+            raise WtcRequestRejectedError(f"address range {address}+{count} out of range")
+        return address
 
     def _validate(self, table: Table, unit_id: int, address: int, count: int) -> int:
         try:
@@ -210,10 +206,9 @@ class GatewayTransport:
         cap = self._settings.cap_for(table)
         if not 1 <= count <= cap:
             raise WtcRequestRejectedError(f"{table.value} count {count} outside 1..{cap}")
-        wire_address = address + self._settings.address_offset
-        if wire_address < 0 or wire_address + count - 1 > MAX_PROTOCOL_ADDRESS:
-            raise WtcRequestRejectedError(f"address range {wire_address}+{count} out of range")
-        return wire_address
+        if address < 0 or address + count - 1 > MAX_PROTOCOL_ADDRESS:
+            raise WtcRequestRejectedError(f"address range {address}+{count} out of range")
+        return address
 
     async def _execute(
         self, table: Table, unit_id: int, address: int, count: int

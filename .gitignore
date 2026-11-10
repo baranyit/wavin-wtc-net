@@ -10,3 +10,6 @@ htmlcov/
 
 # local hardware validation reports
 tests/hardware/reports/
+
+# macOS
+.DS_Store

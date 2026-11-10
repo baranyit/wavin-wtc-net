@@ -443,7 +443,7 @@ async def test_read_only_transport_has_no_write_route() -> None:
     assert not hasattr(transport, "write_wheel_code")
 
 
-# -- cooling comfort targets (decision 11: same rule as heating, cooling neutral and step) -------
+# -- cooling comfort targets (same rule as heating, cooling neutral and step) -------
 
 
 def _make_cooling(rig: Rig, unit: int, zone: int) -> None:
@@ -512,7 +512,7 @@ async def test_cooling_economy_is_still_rejected() -> None:
     assert err.value.reason is RejectReason.NOT_COMFORT
 
 
-# -- lock commands (decision 13): separate opt-in, status lags the command ---------------------
+# -- lock commands: separate opt-in, status lags the command ---------------------
 
 LOCK_COIL = p.zone_lock_command_coil
 LOCK_RIG = CommandPermissions(True, frozenset(), frozenset({(1, 4)}))
@@ -618,7 +618,7 @@ async def test_transport_refuses_any_coil_but_the_lock_coils(address: int) -> No
     assert rig.backend.writes == [] and rig.backend.records == []
 
 
-# -- zone on/off and preset (decision 16): separate opt-in, control coils 0 and 1 only ----------
+# -- zone on/off and preset: separate opt-in, control coils 0 and 1 only ----------
 
 MODE_RIG = CommandPermissions(True, frozenset(), frozenset(), frozenset({(2, 2)}))
 POWER = CommandKind.ZONE_POWER

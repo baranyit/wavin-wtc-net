@@ -1,4 +1,4 @@
-"""Opt-in HARDWARE zone mode test (decision 16). Never runs in CI or by default.
+"""Opt-in HARDWARE zone mode test. Never runs in CI or by default.
 
 Needs a separate maintainer approval for ONE zone and ONE kind (AGENTS.md section 10):
 

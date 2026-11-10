@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="WTC-NET Patient Dial">
+<title>WTC-NET Patient Dial</title>
+<path d="M 121.513 220.773 A 93 93 0 0 1 121.513 35.227" fill="none" stroke="#C5702E" stroke-width="15.5" stroke-linecap="round" stroke-linejoin="round" />
+<path d="M 134.487 35.227 A 93 93 0 0 1 134.487 220.773" fill="none" stroke="#238780" stroke-width="15.5" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="67.38" cy="163.00" r="2.7" fill="#C5702E"/>
+<circle cx="59.06" cy="140.16" r="2.7" fill="#C5702E"/>
+<circle cx="59.06" cy="115.84" r="2.7" fill="#C5702E"/>
+<circle cx="67.38" cy="93.00" r="2.7" fill="#C5702E"/>
+<circle cx="83.00" cy="74.38" r="2.7" fill="#C5702E"/>
+<circle cx="104.06" cy="62.22" r="2.7" fill="#C5702E"/>
+<circle cx="128.00" cy="58.00" r="4.6" fill="#F6F1EA"/>
+<circle cx="151.94" cy="62.22" r="2.7" fill="#238780"/>
+<circle cx="173.00" cy="74.38" r="2.7" fill="#238780"/>
+<circle cx="188.62" cy="93.00" r="2.7" fill="#238780"/>
+<circle cx="196.94" cy="115.84" r="2.7" fill="#238780"/>
+<circle cx="196.94" cy="140.16" r="2.7" fill="#238780"/>
+<circle cx="188.62" cy="163.00" r="2.7" fill="#238780"/>
+<path d="M 128 164 C 105 159, 107 141, 125 136 C 148 131, 149 118, 130 110 C 113 103, 117 91, 128 83" fill="none" stroke="#F6F1EA" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" />
+<circle cx="128.00" cy="164.00" r="8.5" fill="#F6F1EA"/>
+</svg>

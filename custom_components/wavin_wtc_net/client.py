@@ -3,7 +3,7 @@
 The read path has no route to any write operation. Explicit user commands will be
 added in a later milestone as a separate API (``commands.py``).
 
-Read policy (see ``docs/open-decisions.md``, decisions 2-4):
+Read policy:
 
 * static points (firmware, serial) are read on the first cycle after a (re)connect and then
   at most every ``static_refresh_interval``; last known values are kept in between;
