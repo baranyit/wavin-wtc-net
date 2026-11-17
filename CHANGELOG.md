@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.2.1 (unreleased, beta)
+## 0.2.2 (unreleased, beta)
+
+Patch: documentation only.
+
+- The integration is in the HACS default store: the README install steps now start with a HACS
+  search instead of adding a custom repository, and the status line no longer says "not released
+  yet".
+
+## 0.2.1 (2026-11-10, beta)
 
 Patch: no change in behaviour, options, entities or identity.
 

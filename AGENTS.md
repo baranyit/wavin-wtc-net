@@ -222,7 +222,7 @@ and reason in the PR description. `tests/test_version.py` enforces agreement. Th
 
 Releases (HACS installs from GitHub releases): after the merge, with CI, Hassfest and HACS
 validation green on `main`, create a GitHub release `v<version>` (tag on the merge commit, not a
-pre-release) whose body is the CHANGELOG section. Only on the maintainer's request. The HACS
-default-list submission (a PR to `hacs/default`) is the maintainer's own step. HACS requirements to
+pre-release) whose body is the CHANGELOG section. Only on the maintainer's request. The project is
+in the HACS default list (`hacs/default`, merged 2026-11-12). HACS requirements to
 keep: public repo with description and topics, issues enabled, `hacs.json`, brand images in
 `brand/`, a passing `hacs.yml` and `hassfest.yml`, at least one release.
