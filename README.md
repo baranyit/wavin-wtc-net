@@ -13,7 +13,7 @@ controllers over **Modbus TCP**. No cloud, no Java bridge, no MQTT.
 [![HACS validation](https://github.com/baranyit/wavin-wtc-net/actions/workflows/hacs.yml/badge.svg)](https://github.com/baranyit/wavin-wtc-net/actions/workflows/hacs.yml)
 [![Hassfest](https://github.com/baranyit/wavin-wtc-net/actions/workflows/hassfest.yml/badge.svg)](https://github.com/baranyit/wavin-wtc-net/actions/workflows/hassfest.yml)
 
-> **Status: beta (0.2.2, available in the HACS default store).** Reading is the default and has been validated on one
+> **Status: beta (0.2.4, available in the HACS default store).** Reading is the default and has been validated on one
 > real installation. Writing is optional, off by default, and has been exercised on hardware on a
 > single zone. See [what was validated](#what-was-validated). This is an unofficial project,
 > not affiliated with or endorsed by Wavin. Use it at your own risk.

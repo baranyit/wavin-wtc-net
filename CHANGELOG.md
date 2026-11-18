@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.2.2 (unreleased, beta)
+## 0.2.4 (unreleased, beta)
+
+Patch: documentation only.
+
+- CHANGELOG: the 0.2.2 entry carries its release date.
+- AGENTS.md: `main` is merged by squash only, with the required CI checks listed; releases are
+  tagged on the squash commit.
+
+## 0.2.2 (2026-11-17, beta)
 
 Patch: documentation only.
 

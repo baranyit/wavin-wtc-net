@@ -220,9 +220,18 @@ In the same PR as the change: raise `version` in `manifest.json` and `pyproject.
 README status line; add a CHANGELOG section on top (`## X.Y.Z (unreleased, beta)`); state the level
 and reason in the PR description. `tests/test_version.py` enforces agreement. The highest level wins.
 
+`main` is protected by a repository ruleset with no bypass, the maintainer included: no direct
+pushes, force pushes or deletion; every change lands through a pull request that only the
+maintainer merges. **Squash merge is the only allowed method**, so one PR becomes one commit on
+`main` whose title is the PR title and whose message is the PR description: write both as the
+final commit message (English, with the attribution lines). Merging requires these checks to pass:
+`pytest (pymodbus 3.8.*)`, `pytest (pymodbus latest)`, `ruff + mypy`, `hassfest`,
+`HACS validation`. Renaming a workflow job (or changing the pymodbus matrix) means updating the
+ruleset's required checks in the same change, or every PR waits for a check that never runs.
+
 Releases (HACS installs from GitHub releases): after the merge, with CI, Hassfest and HACS
-validation green on `main`, create a GitHub release `v<version>` (tag on the merge commit, not a
-pre-release) whose body is the CHANGELOG section. Only on the maintainer's request. The project is
+validation green on `main`, create a GitHub release `v<version>` (tag on the squash commit of the
+PR, not a pre-release) whose body is the CHANGELOG section. Only on the maintainer's request. The project is
 in the HACS default list (`hacs/default`, merged 2026-11-12). HACS requirements to
 keep: public repo with description and topics, issues enabled, `hacs.json`, brand images in
 `brand/`, a passing `hacs.yml` and `hassfest.yml`, at least one release.
