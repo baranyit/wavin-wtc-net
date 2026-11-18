@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Keeps the SHA-pinned GitHub Actions in .github/workflows current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # Python dev dependencies declared in pyproject.toml.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
