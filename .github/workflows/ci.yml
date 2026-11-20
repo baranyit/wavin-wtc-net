@@ -18,7 +18,7 @@ jobs:
     name: ruff + mypy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.13"
@@ -42,7 +42,7 @@ jobs:
         # Minimum supported (pyproject: pymodbus>=3.8.0) and the newest release.
         pymodbus: ["3.8.*", "latest"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.13"
